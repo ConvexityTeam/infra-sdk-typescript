@@ -7,7 +7,7 @@
   "homepage": "https://docs.withconvexity.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ConvexityTeam/infra-sdk-typescript.git"
+    "url": "https://github.com/ConvexityTeam/infra-sdk-typescript.git"
   },
   "keywords": [
     "convexity",
