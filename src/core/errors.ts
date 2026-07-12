@@ -1,13 +1,3 @@
-/**
- * Error hierarchy for the Convexity Infra SDK.
- *
- * Every error the SDK can throw extends {@link InfraError}, so callers can do a single
- * `catch (err) { if (err instanceof InfraError) ... }` to distinguish SDK errors from
- * unrelated exceptions. HTTP failures extend {@link InfraAPIError} and are further
- * specialized by status code (see {@link errorFromResponse}), matching the status code
- * table in the API's error conventions doc.
- */
-
 /** Base class for every error raised by this SDK. */
 export class InfraError extends Error {
   constructor(message: string) {
@@ -27,7 +17,6 @@ export class InfraConnectionError extends InfraError {
   }
 }
 
-/** The request was aborted because it exceeded the configured timeout. */
 export class InfraConnectionTimeoutError extends InfraConnectionError {
   constructor(timeoutMs: number) {
     super(`Request timed out after ${timeoutMs}ms`);
@@ -35,14 +24,12 @@ export class InfraConnectionTimeoutError extends InfraConnectionError {
 }
 
 /**
- * The server responded with a JSON envelope where `status: false`. Constructed via
- * {@link errorFromResponse}, which picks the most specific subclass for the HTTP status
- * code — prefer catching a subclass (e.g. {@link RateLimitError}) over this base class
- * when you need to branch on the failure kind.
+ * Constructed via {@link errorFromResponse}, which picks the most specific subclass for
+ * the HTTP status code — prefer catching a subclass (e.g. {@link RateLimitError}) over
+ * this base class when you need to branch on the failure kind.
  */
 export class InfraAPIError extends InfraError {
   constructor(
-    /** HTTP status code returned by the server. */
     readonly status: number,
     message: string,
     /** Field-level validation messages, when the server included an `errors` array. */
@@ -56,28 +43,14 @@ export class InfraAPIError extends InfraError {
   }
 }
 
-/** `400 Bad Request` — malformed parameter, body, or unsupported value. */
 export class BadRequestError extends InfraAPIError {}
-
-/** `401 Unauthorized` — missing/invalid token, or missing project/business context. */
 export class AuthenticationError extends InfraAPIError {}
-
-/** `402 Payment Required` — e.g. wallet balance cannot cover estimated gas, or no active subscription. */
 export class PaymentRequiredError extends InfraAPIError {}
-
-/** `403 Forbidden` — test token on a live-only endpoint, missing capability, or cross-business access. */
 export class PermissionDeniedError extends InfraAPIError {}
-
-/** `404 Not Found` — unknown id, or a resource not owned by your project. */
 export class NotFoundError extends InfraAPIError {}
-
-/** `409 Conflict` — e.g. an `Idempotency-Key` was reused with a different request body. */
 export class ConflictError extends InfraAPIError {}
-
-/** `422 Unprocessable Entity` — validation passed but the operation failed (e.g. a transfer reverted on-chain). */
 export class UnprocessableEntityError extends InfraAPIError {}
 
-/** `429 Too Many Requests` — throttled. Honor {@link retryAfterSeconds} before retrying. */
 export class RateLimitError extends InfraAPIError {
   constructor(
     status: number,
@@ -92,19 +65,11 @@ export class RateLimitError extends InfraAPIError {
   }
 }
 
-/** `5xx` — an unexpected failure on the server. */
 export class InternalServerError extends InfraAPIError {}
-
-/** `503 Service Unavailable` — an upstream dependency (e.g. gas pricing) is temporarily unavailable. Safe to retry. */
 export class ServiceUnavailableError extends InfraAPIError {}
-
-/** Any error status this SDK doesn't map to a more specific class. */
 export class UnknownAPIError extends InfraAPIError {}
 
-/**
- * Builds the most specific {@link InfraAPIError} subclass for a given HTTP status,
- * following the status code table in the Infra API's error conventions.
- */
+/** Builds the most specific {@link InfraAPIError} subclass for a given HTTP status. */
 export function errorFromResponse(
   status: number,
   parsedBody: unknown,
@@ -152,14 +117,11 @@ export function errorFromResponse(
 export class InfraAuthTokenError extends InfraError {
   constructor(
     readonly status: number,
-    /** OAuth 2.0 error code, e.g. `invalid_client`. */
     readonly error: string,
-    /** Human-readable OAuth 2.0 error description. */
     readonly errorDescription: string | undefined,
   ) {
     super(errorDescription ? `${error}: ${errorDescription}` : error);
   }
 }
 
-/** Raised by the webhook helpers in `core/webhooks.ts` when a signature fails to verify. */
 export class WebhookSignatureVerificationError extends InfraError {}

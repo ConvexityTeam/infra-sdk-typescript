@@ -25,7 +25,6 @@ export interface RequestOptions {
    */
   idempotencyKey?: string;
   timeoutMs?: number;
-  /** Caller-controlled abort signal (e.g. from an AbortController the caller owns). */
   signal?: AbortSignal;
 }
 
