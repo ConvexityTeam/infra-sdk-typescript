@@ -68,7 +68,6 @@ export class HttpClient {
     const retryableOnConnectionError = options.method === "GET" || Boolean(options.idempotencyKey);
 
     let attempt = 0;
-    // Populated on every failed attempt so it can be re-thrown once retries are exhausted.
     let lastError: unknown;
 
     while (attempt <= this.maxRetries) {
