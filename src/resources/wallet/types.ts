@@ -117,7 +117,7 @@ export interface SignTransactionRequest {
 export interface SignTransactionParams {
   chainType: ChainType;
   /** HD index of the signing wallet. */
-  addressIndex: number;
+  addressIndex?: number;
   /** Target chain id (e.g. `8453`). Required for EVM. */
   chainId?: number;
   network?: Network;
