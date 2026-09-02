@@ -1,30 +1,32 @@
 # infra-sdk-typescript
 
-Official TypeScript SDK for the [Convexity Infra API](https://docs.withconvexity.com) —
-**Wallet**, **Tokenization**, and **Blockchain Events (Indexer)**.
+The official TypeScript SDK for the [Convexity Infra API](https://docs.withconvexity.com).
+It covers three services: **Wallet**, **Tokenization**, and **Blockchain Events** (the
+Indexer).
 
-- Fully typed — every request and response shape is modeled, including the three
-  different pagination envelopes the API uses.
-- Handles auth for you — exchange your API key once; the client mints, caches, and
-  refreshes OAuth bearer tokens automatically.
-- Automatic retries with backoff for rate limits (`429`, honoring `retryAfter`) and
-  upstream outages (`503`), plus safe retries on connection failures for idempotent
-  requests.
-- Auto-generated `Idempotency-Key` headers on value-moving wallet operations, with the
-  option to supply your own.
-- A typed error hierarchy (`RateLimitError`, `NotFoundError`, `PaymentRequiredError`, …)
-  instead of parsing status codes yourself.
-- Webhook signature verification for both the Wallet outcome webhook and Indexer event
-  deliveries.
-- Zero runtime dependencies — built on native `fetch` and `node:crypto`. Ships dual
+What you get:
+
+- Types for every request and response, including all three of the pagination envelopes
+  the API uses.
+- Auth handled for you. Hand the client an API key and it mints, caches, and refreshes
+  OAuth bearer tokens in the background.
+- Retries with backoff on rate limits (`429`, honoring `retryAfter`) and upstream outages
+  (`503`). Connection failures get retried too, but only when a retry is safe.
+- `Idempotency-Key` headers generated automatically on the wallet operations that move
+  value. You can pass your own instead.
+- Real error classes (`RateLimitError`, `NotFoundError`, `PaymentRequiredError`, and so
+  on) so you're not switching on status codes.
+- Signature verification for both webhook schemes: Wallet outcome webhooks and Indexer
+  event deliveries.
+- No runtime dependencies. It's built on native `fetch` and `node:crypto`, and ships dual
   ESM/CJS builds with full `.d.ts` types.
 
 ## Requirements
 
 - Node.js 18 or later.
-- A Convexity Infra API key. There's no self-service signup — email
-  [infra@withconvexity.com](mailto:infra@withconvexity.com) with your business details to
-  get a test key (`sk_test_...`) and a live key (`sk_live_...`).
+- A Convexity Infra API key. There's no self-service signup yet, so email
+  [infra@withconvexity.com](mailto:infra@withconvexity.com) with your business details and
+  you'll get back a test key (`sk_test_...`) and a live key (`sk_live_...`).
 
 ## Install
 
@@ -43,24 +45,26 @@ const balance = await client.wallet.getBalance();
 console.log(`Business balance: $${balance.balance}`);
 ```
 
-The client exchanges your API key for a short-lived OAuth bearer token on first use
-(`POST /v1/oauth/token`), caches it, and refreshes it before it expires (and once, on an
-unexpected `401`) — you never handle tokens directly.
+On the first call, the client trades your API key for a short-lived OAuth bearer token
+(`POST /v1/oauth/token`) and caches it. It refreshes that token before it expires, and
+retries once if it ever gets a surprise `401`. You shouldn't need to touch tokens yourself.
 
-More end-to-end examples live in [`examples/`](./examples):
+There are fuller examples in [`examples/`](./examples):
 
-- [`basic-usage.ts`](./examples/basic-usage.ts) — derive a wallet, transfer, poll for completion.
-- [`pagination.ts`](./examples/pagination.ts) — the three ways to consume a paginated list.
-- [`tokenization-yield-lifecycle.ts`](./examples/tokenization-yield-lifecycle.ts) — issue a
-  yield-bearing token, mint, pay a coupon, redeem principal.
-- [`indexer-subscription.ts`](./examples/indexer-subscription.ts) — subscribe to on-chain
-  events and manage the subscription.
-- [`webhook-verification.ts`](./examples/webhook-verification.ts) — verify both webhook
-  signature schemes in a plain `node:http` server.
+- [`basic-usage.ts`](./examples/basic-usage.ts) derives a wallet, transfers, and polls for
+  completion.
+- [`pagination.ts`](./examples/pagination.ts) shows all three ways to consume a paginated
+  list.
+- [`tokenization-yield-lifecycle.ts`](./examples/tokenization-yield-lifecycle.ts) walks a
+  yield-bearing token from issue through mint, coupon payment, and principal redemption.
+- [`indexer-subscription.ts`](./examples/indexer-subscription.ts) subscribes to on-chain
+  events and manages the subscription afterward.
+- [`webhook-verification.ts`](./examples/webhook-verification.ts) verifies both signature
+  schemes inside a plain `node:http` server.
 
 ## Resources
 
-The client exposes one namespace per service:
+There's one namespace per service:
 
 | Namespace | Service | Docs |
 |---|---|---|
@@ -68,15 +72,15 @@ The client exposes one namespace per service:
 | `client.tokenization` | Issue, mint/burn/transfer tokenized assets; yield lifecycle | [Tokenization overview](https://docs.withconvexity.com/api-reference/tokenization/overview) |
 | `client.indexer` | Subscribe to decoded on-chain events, delivered to your webhook | [Blockchain Events overview](https://docs.withconvexity.com/api-reference/indexer/overview) |
 
-Every method mirrors the API 1:1 (see each resource's JSDoc, or the type definitions, for
-the full parameter/return shape). A few highlights:
+The methods map 1:1 onto the API. Check the JSDoc on each resource, or the type
+definitions, for full parameter and return shapes. A few things worth calling out:
 
 ### Async transfers
 
 [`initiateTransfer`](./src/resources/wallet/index.ts) and
-[`signTransaction`](./src/resources/wallet/index.ts) are asynchronous by default: they
-return a `PENDING` transaction immediately (HTTP `202`), and the on-chain execution
-continues in the background.
+[`signTransaction`](./src/resources/wallet/index.ts) are async by default. They hand back a
+`PENDING` transaction right away (HTTP `202`) and the on-chain execution keeps going in the
+background.
 
 ```ts
 const transfer = await client.wallet.initiateTransfer({
@@ -94,25 +98,25 @@ while (final.status === "PENDING" || final.status === "PROCESSING") {
   final = await client.wallet.getTransaction(transfer.id);
 }
 
-// ...or receive the outcome at a webhook instead, by passing webhookUrl/webhookSecret
-// on the initiate call, and verifying deliveries with `verifyWalletWebhookSignature`.
+// ...or take the outcome at a webhook instead: pass webhookUrl/webhookSecret on the
+// initiate call, then verify deliveries with `verifyWalletWebhookSignature`.
 ```
 
-Pass `waitForCompletion: true` for the legacy synchronous behavior, which holds the
-request open for the settled result instead.
+If you want the old synchronous behavior, pass `waitForCompletion: true`. That holds the
+request open until the transaction settles and returns the final result.
 
 ### Pagination
 
-The API uses three different pagination envelopes depending on the service. This SDK
-normalizes all of them into one `Page<T>` type:
+The API hands back three different pagination envelopes depending on which service you're
+hitting. The SDK flattens all of them into a single `Page<T>`:
 
 ```ts
-// Lazily iterate every item, fetching subsequent pages as needed:
+// Iterate every item; later pages are fetched as you go.
 for await (const token of await client.tokenization.listTokens()) {
   console.log(token.ticker);
 }
 
-// Or walk page by page:
+// Or walk it a page at a time:
 let page = await client.wallet.getTransactionHistory({ status: "COMPLETED" });
 for (;;) {
   for (const tx of page.data) handle(tx);
@@ -120,15 +124,15 @@ for (;;) {
   page = await page.getNextPage();
 }
 
-// Or eagerly collect everything (fine for small collections):
+// Or just pull the whole thing into memory, which is fine for small collections:
 const holders = await (await client.tokenization.getTokenHolders({ tokenId })).toArray();
 ```
 
 ### Idempotency
 
-Wallet's value-moving endpoints (`initiateTransfer`, `signTransaction`, `generateWallets`)
-require an `Idempotency-Key` header. The SDK generates a UUIDv4 for you automatically; pass
-your own to control retries across separate SDK calls (e.g. after a process restart):
+`initiateTransfer`, `signTransaction`, and `generateWallets` all require an
+`Idempotency-Key` header. The SDK generates a UUIDv4 per call. Pass your own when you need
+a retry to line up across two separate SDK calls, like after a process restart:
 
 ```ts
 await client.wallet.initiateTransfer(params, { idempotencyKey: "my-own-key" });
@@ -136,8 +140,8 @@ await client.wallet.initiateTransfer(params, { idempotencyKey: "my-own-key" });
 
 ### Errors
 
-Every failure is a subclass of `InfraError`. HTTP failures are subclasses of
-`InfraAPIError`, matching the API's status code table:
+Everything the SDK throws extends `InfraError`. HTTP failures extend `InfraAPIError` and
+line up with the status code table in the API docs:
 
 ```ts
 import { RateLimitError, PaymentRequiredError, UnprocessableEntityError, InfraAPIError } from "infra-sdk-typescript";
@@ -150,8 +154,8 @@ try {
   } else if (err instanceof PaymentRequiredError) {
     console.log("Insufficient gas balance");
   } else if (err instanceof UnprocessableEntityError) {
-    // waitForCompletion: true transfers that revert on-chain still carry the failed
-    // transaction — read it off the raw response body if you need the details.
+    // A waitForCompletion: true transfer that reverts on-chain still carries the failed
+    // transaction. Read it off the raw response body if you need the details.
     console.log((err.body as { data?: unknown }).data);
   } else if (err instanceof InfraAPIError) {
     console.log(err.status, err.message, err.errors);
@@ -159,17 +163,19 @@ try {
 }
 ```
 
-`429` and `503` responses are retried automatically (2 retries by default); everything
-else is thrown immediately since retrying without changing the request won't help.
+`429` and `503` get retried for you (twice by default). Everything else throws right away,
+because sending the identical request again won't change the answer.
 
 ### Retries, timeouts, and connection safety
 
-- `429` and `503` are retried automatically — the server didn't execute the request, so
-  this is always safe. `429` retries honor the response's `retryAfter`.
-- A connection failure (timeout, DNS, TLS, aborted socket) is ambiguous — the request may
-  have already run server-side. The SDK only retries these for `GET` requests or requests
-  carrying an `Idempotency-Key`, where a retry is provably safe.
-- Configure globally via the constructor, or per call:
+- `429` and `503` are always retried. The server never executed the request in either
+  case, so there's nothing to double up on. `429` retries wait for whatever `retryAfter`
+  says.
+- Connection failures are murkier. If a request times out, or DNS fails, or TLS breaks, or
+  the socket aborts, you can't tell whether the server already ran it. So the SDK only
+  retries those on `GET` requests and on requests carrying an `Idempotency-Key`, where a
+  duplicate provably can't hurt.
+- Set these on the constructor, or override them per call:
 
 ```ts
 const client = new InfraClient({
@@ -187,31 +193,30 @@ await client.wallet.getBalance({ timeoutMs: 5_000, signal: myAbortController.sig
 import { verifyWalletWebhookSignature, verifyIndexerWebhookSignature } from "infra-sdk-typescript";
 
 // Wallet outcome webhooks (wallet.transfer.completed / .failed, wallet.sign.completed / .failed):
-// HMAC-SHA256("<timestamp>.<rawBody>"), with a 5-minute replay-protection window by default.
+// HMAC-SHA256("<timestamp>.<rawBody>"), with a 5-minute replay window by default.
 verifyWalletWebhookSignature({
-  payload: rawBody, // the exact bytes received — do not JSON.parse + re-stringify first
+  payload: rawBody, // exactly the bytes you received — don't JSON.parse and re-stringify
   timestampHeader: req.headers["x-wallet-timestamp"],
   signatureHeader: req.headers["x-wallet-signature"],
-  secret: webhookSecret, // the value you passed as `webhookSecret` on the originating call
+  secret: webhookSecret, // whatever you passed as `webhookSecret` on the originating call
 });
 
 // Indexer (Blockchain Events) deliveries: HMAC-SHA256(rawBody), no timestamp component.
 verifyIndexerWebhookSignature({
   payload: rawBody,
   signatureHeader: req.headers["x-indexer-signature"],
-  secret: signingSecret, // returned once, on subscription creation or secret rotation
+  secret: signingSecret, // returned once, when you create the subscription or rotate the secret
 });
 ```
 
-Both throw `WebhookSignatureVerificationError` on failure — see
-[`examples/webhook-verification.ts`](./examples/webhook-verification.ts) for a full
-`node:http` handler.
+Both throw `WebhookSignatureVerificationError` when verification fails. There's a complete
+`node:http` handler in [`examples/webhook-verification.ts`](./examples/webhook-verification.ts).
 
 ### Escape hatch
 
-Every resource method is a thin wrapper over `client.request()`, which carries the same
-auth, retry, and timeout behavior. Use it directly for any endpoint this SDK version
-doesn't wrap yet:
+Every resource method is a thin wrapper around `client.request()`, which carries the same
+auth, retry, and timeout behavior. If this version of the SDK doesn't wrap an endpoint yet,
+call it directly:
 
 ```ts
 const data = await client.request<{ enabled: boolean }>({
@@ -241,9 +246,9 @@ npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
 npm test            # vitest
 npm run build       # tsup -> dist/ (ESM + CJS + .d.ts)
-npm run ci           # all of the above, in order
+npm run ci          # all of the above, in order
 ```
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE).
