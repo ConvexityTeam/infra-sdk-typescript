@@ -34,7 +34,7 @@ export interface CreateTokenParams {
   name: string;
   /** Issue price per token, in fiat major units. */
   price?: number;
-  chain: Chain;
+  chainId: string;
   decimals: number;
   /** Asset class, e.g. `"MONEY_MARKET"`. */
   assetClass: string;
@@ -83,7 +83,7 @@ export interface TokenSummary {
 /** Per-chain deployment details within a {@link TokenDetail}. */
 export interface TokenChainDeployment {
   id: string;
-  chain: Chain;
+  chainId: string;
   tokenAdmin: string;
   decimals: number;
   status: TokenStatus;
