@@ -7,7 +7,7 @@ async function main() {
   const deployment = await client.tokenization.createToken({
     ticker: "ACMB3",
     name: "Acme 3yr Bond",
-    chain: "BASE",
+    chainId: "84532",
     decimals: 18,
     assetClass: "MONEY_MARKET",
     tokenType: "YIELD_BEARING",
@@ -31,15 +31,15 @@ async function main() {
   console.log(`Token ${token.ticker} is ${token.status}`);
 
   // Whitelist an investor wallet, then mint them units.
-  await client.tokenization.registerWallet({ tokenId: token.id, chain: "BASE", walletAddress: "0xInvestor..." });
-  await client.tokenization.mintToken({ tokenId: token.id, chain: "BASE", toAddress: "0xInvestor...", amount: 10 });
+  await client.tokenization.registerWallet({ tokenId: token.id, chainId: "84532", walletAddress: "0xInvestor..." });
+  await client.tokenization.mintToken({ tokenId: token.id, chainId: "84532", toAddress: "0xInvestor...", amount: 10 });
 
   // Pay the scheduled coupon, pushing funds directly to investors.
-  const coupon = await client.tokenization.payCoupon({ tokenId: token.id, chain: "BASE", pushYield: true });
+  const coupon = await client.tokenization.payCoupon({ tokenId: token.id, chainId: "84532", pushYield: true });
   console.log(`Coupon paid: ${coupon.txHash}`);
 
   // At maturity, redeem principal.
-  const redemption = await client.tokenization.redeemPrincipal({ tokenId: token.id, chain: "BASE", pushYield: true });
+  const redemption = await client.tokenization.redeemPrincipal({ tokenId: token.id, chainId: "84532", pushYield: true });
   console.log(`Principal redeemed: ${redemption.txHash}`);
 }
 
