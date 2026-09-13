@@ -2,9 +2,9 @@ import type { Chain, ChainType, LooseUnion, Network } from "../../types.js";
 
 export type TokenType = "ASSET" | "YIELD_BEARING";
 
-export type TokenStatus = LooseUnion<"PENDING" | "ACTIVE" | "PAUSED">;
+export type TokenStatus = LooseUnion<"PENDING" | "ACTIVE" | "PAUSED" | "RETIRED">;
 
-export type TokenTransactionType = LooseUnion<"MINT" | "BURN" | "TRANSFER">;
+export type TokenTransactionType = LooseUnion<"MINT" | "BURN" | "TRANSFER" | "DEPLOY" | "REDEEM" | "SNAPSHOT">;
 
 export type TokenTransactionStatus = LooseUnion<"PENDING" | "CONFIRMED" | "FAILED">;
 
@@ -26,6 +26,8 @@ export interface YieldParams {
   callable?: boolean;
   /** Call date, `YYYY-MM-DD`. Only meaningful when `callable` is `true`. */
   callDate?: string;
+  /** Early redemption fee, in basis points. */
+  earlyRedemptionFee?: number;
 }
 
 export interface CreateTokenParams {
@@ -52,7 +54,7 @@ export interface CreateTokenParams {
 /** Result of a token deployment submission — `status` starts `PENDING` until the chain confirms it. */
 export interface TokenDeploymentResult {
   id: string;
-  chain: Chain;
+  chainId: string;
   status: TokenStatus;
   operationRef: string;
   tokenAdmin: string;
@@ -116,7 +118,7 @@ export interface ListTokensParams {
 
 export interface BurnTokenParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** Holder address to burn from. */
   fromAddress: string;
   /** Amount to burn, in token units. */
@@ -127,7 +129,7 @@ export interface BurnTokenParams {
 
 export interface MintTokenParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** Recipient wallet address. */
   toAddress: string;
   /** Amount to mint, in token units. */
@@ -137,7 +139,7 @@ export interface MintTokenParams {
 
 export interface TransferTokenParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   fromAddress: string;
   toAddress: string;
   /** Amount to transfer, in token units. */
@@ -178,19 +180,19 @@ export interface TokenTransferResult {
 
 export interface RegisterTokenWalletParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   walletAddress: string;
 }
 
 export interface RegisterTokenWalletResult {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   walletAddress: string;
 }
 
 export interface GetTokenHoldersParams {
   tokenId: string;
-  chain?: Chain;
+  chainId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -203,15 +205,22 @@ export interface TokenHolder {
 
 export interface ListTokenTransactionsParams {
   tokenId?: string;
+  chainId?: string;
   page?: number;
   pageSize?: number;
+  type?: TokenTransactionType;
+  status?: TokenTransactionStatus;
+  fromAddress?: string;
+  toAddress?: string;
+  txHash?: string;
+  operationRef?: string;
 }
 
 /** A recorded on-chain operation against a token (mint, burn, or transfer). */
 export interface TokenTransactionRecord {
   id: string;
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   projectId?: string;
   type: TokenTransactionType;
   status: TokenTransactionStatus;
@@ -233,16 +242,17 @@ export interface TokenTransactionRecord {
 export interface UpdateTokenYieldParams {
   /** Yield-bearing token id. */
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** New annual yield rate, as a percentage. */
   annualRate: number;
 }
 
 export interface DistributeYieldParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** Amount to fund the distribution, in fiat major units. */
   fundAmount: number;
+  payoutToken?: string;
   /** Seconds after which unclaimed funds may be reclaimed. */
   reclaimAfter?: number;
   memo?: string;
@@ -250,7 +260,8 @@ export interface DistributeYieldParams {
 
 export interface PayCouponParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
+  payoutToken?: string;
   /** Push the coupon to investors instead of letting them claim it. */
   pushYield?: boolean;
   reclaimAfter?: number;
@@ -259,7 +270,7 @@ export interface PayCouponParams {
 
 export interface ClaimYieldParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** HD address index of the claiming investor. */
   investorAddressIndex: number;
   /** Distribution snapshot to claim against. */
@@ -268,7 +279,7 @@ export interface ClaimYieldParams {
 
 export interface RedeemPrincipalParams {
   tokenId: string;
-  chain: Chain;
+  chainId: string;
   /** Push redeemed funds to investors instead of letting them claim. */
   pushYield?: boolean;
 }
