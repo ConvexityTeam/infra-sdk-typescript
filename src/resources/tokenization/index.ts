@@ -1,13 +1,16 @@
 import { APIResource } from "../resource.js";
 import { pageFromFlatResponse } from "../../core/pagination.js";
 import type { Page, FlatPaginatedResponse } from "../../core/pagination.js";
-import type { RequestOverrides } from "../../types.js";
+import { generateIdempotencyKey } from "../../core/idempotency.js";
+import type { IdempotentRequestOverrides, RequestOverrides } from "../../types.js";
 import type {
   BurnTokenParams,
   ClaimYieldParams,
   CreateTokenParams,
   DistributeYieldParams,
+  ForcedTransferTokenParams,
   GetTokenHoldersParams,
+  GetWalletBalanceParams,
   ListTokenTransactionsParams,
   ListTokensParams,
   MintTokenParams,
@@ -22,6 +25,7 @@ import type {
   TokenSummary,
   TokenTransactionRecord,
   TokenTransferResult,
+  TokenWalletBalance,
   TransferTokenParams,
   UpdateTokenYieldParams,
   YieldOperationResult,
@@ -43,12 +47,17 @@ export class TokenizationResource extends APIResource {
    * {@link getToken} until `status` is `ACTIVE`. Supply `yieldParams` for a
    * `YIELD_BEARING` token.
    */
-  async createToken(params: CreateTokenParams, overrides: RequestOverrides = {}): Promise<TokenDeploymentResult> {
+  async createToken(
+    params: CreateTokenParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<TokenDeploymentResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<TokenDeploymentResult>({
       method: "POST",
       path: "/v1/tokens",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
@@ -84,45 +93,81 @@ export class TokenizationResource extends APIResource {
   }
 
   /** Mints new units of a token to a recipient address. */
-  async mintToken(params: MintTokenParams, overrides: RequestOverrides = {}): Promise<TokenOperationResult> {
+  async mintToken(
+    params: MintTokenParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<TokenOperationResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<TokenOperationResult>({
       method: "POST",
       path: "/v1/tokens/mint",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Burns units of a token from a holder address. */
-  async burnToken(params: BurnTokenParams, overrides: RequestOverrides = {}): Promise<TokenOperationResult> {
+  async burnToken(
+    params: BurnTokenParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<TokenOperationResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<TokenOperationResult>({
       method: "POST",
       path: "/v1/tokens/burn",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Transfers token units between holder addresses. */
-  async transferToken(params: TransferTokenParams, overrides: RequestOverrides = {}): Promise<TokenTransferResult> {
+  async transferToken(
+    params: TransferTokenParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<TokenTransferResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<TokenTransferResult>({
       method: "POST",
       path: "/v1/tokens/transfer",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
+    });
+  }
+
+  /**
+   * Force-transfers token units out of a holder's address without the holder's signature
+   * (issuer/admin compliance action, e.g. recovery or court order). An `Idempotency-Key` is
+   * generated per call unless you pass your own.
+   */
+  async forcedTransfer(
+    params: ForcedTransferTokenParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<TokenOperationResult> {
+    const { idempotencyKey, ...rest } = overrides;
+    return this.client.request<TokenOperationResult>({
+      method: "POST",
+      path: "/v1/tokens/forced-transfer",
+      body: params,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Registers (whitelists) a wallet address so it can hold a given token. */
   async registerWallet(
     params: RegisterTokenWalletParams,
-    overrides: RequestOverrides = {},
+    overrides: IdempotentRequestOverrides = {},
   ): Promise<RegisterTokenWalletResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<RegisterTokenWalletResult>({
       method: "POST",
       path: "/v1/tokens/register-wallet",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
@@ -139,6 +184,19 @@ export class TokenizationResource extends APIResource {
         .then((raw) => pageFromFlatResponse(raw, fetchPage));
 
     return fetchPage({ page: params.page, pageSize: params.pageSize });
+  }
+
+  /** Returns a single wallet's balance of a token on a chain. */
+  async getWalletBalance(
+    params: GetWalletBalanceParams,
+    overrides: RequestOverrides = {},
+  ): Promise<TokenWalletBalance> {
+    return this.client.request<TokenWalletBalance>({
+      method: "GET",
+      path: "/v1/tokens/balance",
+      query: { ...params },
+      ...overrides,
+    });
   }
 
   /** Fetches a single token transaction by its reference. */
@@ -181,43 +239,60 @@ export class TokenizationResource extends APIResource {
   /** Funds and distributes a yield payout to holders. Unclaimed funds may be reclaimed after `reclaimAfter`. */
   async distributeYield(
     params: DistributeYieldParams,
-    overrides: RequestOverrides = {},
+    overrides: IdempotentRequestOverrides = {},
   ): Promise<YieldOperationResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<YieldOperationResult>({
       method: "POST",
       path: "/v1/tokens/yield/distribute",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Pays the scheduled coupon for a yield-bearing token. Set `pushYield` to push funds rather than let investors claim. */
-  async payCoupon(params: PayCouponParams, overrides: RequestOverrides = {}): Promise<YieldOperationResult> {
+  async payCoupon(
+    params: PayCouponParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<YieldOperationResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<YieldOperationResult>({
       method: "POST",
       path: "/v1/tokens/yield/pay-coupon",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Claims an investor's yield for a given distribution snapshot. */
-  async claimYield(params: ClaimYieldParams, overrides: RequestOverrides = {}): Promise<YieldTxResult> {
+  async claimYield(
+    params: ClaimYieldParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<YieldTxResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<YieldTxResult>({
       method: "POST",
       path: "/v1/tokens/yield/claim",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
   /** Redeems principal to holders at maturity. Set `pushYield` to push funds rather than let investors claim. */
-  async redeemPrincipal(params: RedeemPrincipalParams, overrides: RequestOverrides = {}): Promise<YieldTxResult> {
+  async redeemPrincipal(
+    params: RedeemPrincipalParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<YieldTxResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<YieldTxResult>({
       method: "POST",
       path: "/v1/tokens/yield/redeem",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 }

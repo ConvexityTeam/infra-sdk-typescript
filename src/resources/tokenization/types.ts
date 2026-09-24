@@ -1,4 +1,4 @@
-import type { Chain, ChainType, LooseUnion, Network } from "../../types.js";
+import type { Chain, LooseUnion } from "../../types.js";
 
 export type TokenType = "ASSET" | "YIELD_BEARING";
 
@@ -140,6 +140,18 @@ export interface MintTokenParams {
 export interface TransferTokenParams {
   tokenId: string;
   chainId: string;
+  /** HD address index of the sending holder wallet. */
+  fromAddressIndex: number;
+  toAddress: string;
+  /** Amount to transfer, in token units. */
+  amount: number;
+  memo?: string;
+}
+
+export interface ForcedTransferTokenParams {
+  tokenId: string;
+  chainId: string;
+  /** Holder address to move tokens out of. */
   fromAddress: string;
   toAddress: string;
   /** Amount to transfer, in token units. */
@@ -147,35 +159,27 @@ export interface TransferTokenParams {
   memo?: string;
 }
 
-/** Result of {@link TokenizationResource.mintToken} / {@link TokenizationResource.burnToken}. */
+/**
+ * Result of {@link TokenizationResource.mintToken} / {@link TokenizationResource.burnToken} /
+ * {@link TokenizationResource.forcedTransfer}.
+ */
 export interface TokenOperationResult {
   operationRef: string;
   transactionId: string;
   txHash: string;
 }
 
-/** Result of {@link TokenizationResource.transferToken} — the settled on-chain transfer record. */
+/** Result of {@link TokenizationResource.transferToken}. */
 export interface TokenTransferResult {
-  id: string;
-  type: string;
-  chainType: ChainType;
-  network: Network;
-  chainId: number;
-  signerType: string;
-  fromAddress: string;
-  addressIndex: number | null;
-  toAddress: string;
-  /** Amount in token units, as a decimal string. */
-  amount: string;
-  tokenAddress: string | null;
-  data: string | null;
-  value: string | null;
-  txHash: string;
+  tokenId: string;
   status: TokenTransactionStatus;
-  gasUsed: string | null;
-  feeWei: string | null;
-  createdAt: string;
-  updatedAt: string;
+  transactionId: string;
+  fromAddressIndex: number;
+  toAddress: string;
+  /** Amount transferred, in token units. */
+  amount: number;
+  txHash: string;
+  operationRef: string;
 }
 
 export interface RegisterTokenWalletParams {
@@ -201,6 +205,23 @@ export interface TokenHolder {
   walletAddress: string;
   /** Balance in token units, as a decimal string. */
   balance: string;
+}
+
+export interface GetWalletBalanceParams {
+  tokenId: string;
+  chainId: string;
+  walletAddress: string;
+}
+
+/** A single wallet's balance of a token, returned by {@link TokenizationResource.getWalletBalance}. */
+export interface TokenWalletBalance {
+  tokenId: string;
+  ticker: string;
+  chainId: string;
+  walletAddress: string;
+  /** Balance in token units, as a decimal string. */
+  balance: string;
+  decimals: number;
 }
 
 export interface ListTokenTransactionsParams {
