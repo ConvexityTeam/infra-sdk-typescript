@@ -131,7 +131,9 @@ const holders = await (await client.tokenization.getTokenHolders({ tokenId })).t
 ### Idempotency
 
 `initiateTransfer`, `signTransaction`, and `generateWallets` all require an
-`Idempotency-Key` header. The SDK generates a UUIDv4 per call. Pass your own when you need
+`Idempotency-Key` header, as do the tokenization write methods (`createToken`, `mintToken`,
+`burnToken`, `transferToken`, `forcedTransfer`, `registerWallet`, `distributeYield`,
+`payCoupon`, `claimYield`, `redeemPrincipal`). The SDK generates a UUIDv4 per call. Pass your own when you need
 a retry to line up across two separate SDK calls, like after a process restart:
 
 ```ts
