@@ -1,6 +1,6 @@
 {
   "name": "infra-sdk-typescript",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official TypeScript SDK for the Convexity Infra API — Wallet, Tokenization, and Blockchain Events (Indexer).",
   "license": "MIT",
   "author": "Convexity",

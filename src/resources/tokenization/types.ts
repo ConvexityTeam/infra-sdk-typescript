@@ -8,45 +8,64 @@ export type TokenTransactionType = LooseUnion<"MINT" | "BURN" | "TRANSFER" | "DE
 
 export type TokenTransactionStatus = LooseUnion<"PENDING" | "CONFIRMED" | "FAILED">;
 
+/**
+ * Chain id a token is deployed on, e.g. `84532` (Base Sepolia). The API accepts it as a number
+ * or a numeric string; responses always return it as a string.
+ */
+export type TokenChainId = string | number;
+
+export type AssetClass = LooseUnion<"FIXED_INCOME" | "MONEY_MARKET" | "REAL_ESTATE" | "COMMODITY" | "EQUITY" | "LOYALTY_VOUCHER">;
+
+/** Day-count convention used to accrue yield. */
+export type YieldDayCount = LooseUnion<"ACT_365" | "ACT_360" | "THIRTY_360">;
+
+/** Stablecoin a yield payout is made in. Omit to pay out in the token's own settlement asset. */
+export type YieldPayoutToken = LooseUnion<"CNGN">;
+
 export interface YieldParams {
-  /** Annual yield rate as a percentage, e.g. `5.5` for 5.5%. */
+  /**
+   * Annual yield rate as a percentage, e.g. `5.5` for 5.5%. Must be greater than `0`, at most
+   * `100`, and have no more than 2 decimal places.
+   */
   annualRate: number;
-  /** Maturity date, `YYYY-MM-DD`. */
+  /** Maturity date, `YYYY-MM-DD`. Must be in the future. */
   maturityDate: string;
-  /** First coupon date, `YYYY-MM-DD`. */
+  /** First coupon date, `YYYY-MM-DD`. Must be in the future and before `maturityDate`. */
   firstCouponDate: string;
-  /** Coupon interval, in days. */
+  /** Coupon interval, in days. Must be at least `1`. */
   couponInterval: number;
-  /** Day-count convention, e.g. `"ACT_365"`. */
-  dayCount: string;
-  /** Face value per token, in fiat major units. */
+  dayCount: YieldDayCount;
+  /** Face value per token, in fiat major units. Must be at least `1`. */
   faceValuePerToken: number;
   /** Grace period, in seconds. */
-  gracePeriod?: number;
-  callable?: boolean;
-  /** Call date, `YYYY-MM-DD`. Only meaningful when `callable` is `true`. */
+  gracePeriod: number;
+  callable: boolean;
+  /**
+   * Call date, `YYYY-MM-DD`. Only meaningful when `callable` is `true`. Must be in the future
+   * and before `maturityDate`.
+   */
   callDate?: string;
   /** Early redemption fee, in basis points. */
   earlyRedemptionFee?: number;
 }
 
 export interface CreateTokenParams {
-  /** Short token symbol, e.g. `"ACMB3"`. */
+  /** Short token symbol, e.g. `"ACMB3"`. At most 10 characters. */
   ticker: string;
   name: string;
-  /** Issue price per token, in fiat major units. */
-  price?: number;
-  chainId: string;
-  decimals: number;
-  /** Asset class, e.g. `"MONEY_MARKET"`. */
-  assetClass: string;
+  /** Issue price per token, in fiat major units. Must be at least `1`. */
+  price: number;
+  chainId: TokenChainId;
+  /** Between `1` and `18`. */
+  decimals?: number;
+  assetClass: AssetClass;
   tokenType: TokenType;
   /** Maximum holders; `0` for unlimited. */
-  maxShareholders?: number;
+  maxShareholders: number;
   /** Per-investor cap; `0` for unlimited. */
-  maxTokensPerInvestor?: number;
+  maxTokensPerInvestor: number;
   /** Lock-up duration, in seconds; `0` for none. */
-  lockUpDuration?: number;
+  lockUpDuration: number;
   /** Required when `tokenType` is `"YIELD_BEARING"`. */
   yieldParams?: YieldParams;
 }
@@ -118,7 +137,7 @@ export interface ListTokensParams {
 
 export interface BurnTokenParams {
   tokenId: string;
-  chainId: string;
+  chainId: TokenChainId;
   /** Holder address to burn from. */
   fromAddress: string;
   /** Amount to burn, in token units. */
@@ -129,7 +148,7 @@ export interface BurnTokenParams {
 
 export interface MintTokenParams {
   tokenId: string;
-  chainId: string;
+  chainId: TokenChainId;
   /** Recipient wallet address. */
   toAddress: string;
   /** Amount to mint, in token units. */
@@ -139,8 +158,8 @@ export interface MintTokenParams {
 
 export interface TransferTokenParams {
   tokenId: string;
-  chainId: string;
-  /** HD address index of the sending holder wallet. */
+  chainId: TokenChainId;
+  /** HD address index of the sending holder wallet. Must be greater than `0`. */
   fromAddressIndex: number;
   toAddress: string;
   /** Amount to transfer, in token units. */
@@ -150,9 +169,10 @@ export interface TransferTokenParams {
 
 export interface ForcedTransferTokenParams {
   tokenId: string;
-  chainId: string;
-  /** Holder address to move tokens out of. */
+  chainId: TokenChainId;
+  /** Holder address to move tokens out of. Must be a valid EVM address. */
   fromAddress: string;
+  /** Must be a valid EVM address. */
   toAddress: string;
   /** Amount to transfer, in token units. */
   amount: number;
@@ -184,7 +204,7 @@ export interface TokenTransferResult {
 
 export interface RegisterTokenWalletParams {
   tokenId: string;
-  chainId: string;
+  chainId: TokenChainId;
   walletAddress: string;
 }
 
@@ -196,7 +216,7 @@ export interface RegisterTokenWalletResult {
 
 export interface GetTokenHoldersParams {
   tokenId: string;
-  chainId?: string;
+  chainId?: TokenChainId;
   page?: number;
   pageSize?: number;
 }
@@ -209,7 +229,7 @@ export interface TokenHolder {
 
 export interface GetWalletBalanceParams {
   tokenId: string;
-  chainId: string;
+  chainId: TokenChainId;
   walletAddress: string;
 }
 
@@ -226,7 +246,7 @@ export interface TokenWalletBalance {
 
 export interface ListTokenTransactionsParams {
   tokenId?: string;
-  chainId?: string;
+  chainId?: TokenChainId;
   page?: number;
   pageSize?: number;
   type?: TokenTransactionType;
@@ -258,60 +278,102 @@ export interface TokenTransactionRecord {
   memo?: string;
   createdAt?: string;
   confirmedAt?: string;
+  /** Distribution snapshot id, set on `SNAPSHOT` transactions. */
+  snapshotId?: number;
 }
 
 export interface UpdateTokenYieldParams {
   /** Yield-bearing token id. */
   tokenId: string;
-  chainId: string;
-  /** New annual yield rate, as a percentage. */
+  chainId: TokenChainId;
+  /** New annual yield rate, as a percentage. Same limits as {@link YieldParams.annualRate}. */
   annualRate: number;
+}
+
+/** Result of {@link TokenizationResource.updateYield}. */
+export interface UpdateYieldResult {
+  /** Annual rate before the update, as a percentage. */
+  currentRate: number;
+  /** Annual rate after the update, as a percentage. */
+  newRate: number;
+  txHash: string;
 }
 
 export interface DistributeYieldParams {
   tokenId: string;
-  chainId: string;
-  /** Amount to fund the distribution, in fiat major units. */
+  chainId: TokenChainId;
+  /** Amount to fund the distribution, in fiat major units. A whole number, at least `1`. */
   fundAmount: number;
-  payoutToken?: string;
-  /** Seconds after which unclaimed funds may be reclaimed. */
-  reclaimAfter?: number;
-  memo?: string;
+  payoutToken?: YieldPayoutToken;
+  /** Seconds after which unclaimed funds may be reclaimed. A whole number, at least `1`. */
+  reclaimAfter: number;
+  /** Push the payout to investors instead of letting them claim it. */
+  pushYield?: boolean;
+  /** Note recorded with the distribution. */
+  memo: string;
 }
 
 export interface PayCouponParams {
   tokenId: string;
-  chainId: string;
-  payoutToken?: string;
+  chainId: TokenChainId;
+  payoutToken?: YieldPayoutToken;
   /** Push the coupon to investors instead of letting them claim it. */
-  pushYield?: boolean;
-  reclaimAfter?: number;
-  memo?: string;
+  pushYield: boolean;
+  /** Seconds after which unclaimed funds may be reclaimed. At least `1`. */
+  reclaimAfter: number;
+  /** Note recorded with the coupon payment. */
+  memo: string;
 }
 
 export interface ClaimYieldParams {
   tokenId: string;
-  chainId: string;
-  /** HD address index of the claiming investor. */
+  chainId: TokenChainId;
+  /** HD address index of the claiming investor. At least `1`. */
   investorAddressIndex: number;
-  /** Distribution snapshot to claim against. */
+  /** Distribution snapshot to claim against. At least `1`. */
   snapshotId: number;
 }
 
 export interface RedeemPrincipalParams {
   tokenId: string;
-  chainId: string;
-  /** Push redeemed funds to investors instead of letting them claim. */
-  pushYield?: boolean;
+  chainId: TokenChainId;
 }
 
-/** Result of a yield operation that only returns a transaction hash. */
+/** Result of {@link TokenizationResource.redeemPrincipal} — one transaction per redemption payout. */
+export interface RedeemPrincipalResult {
+  tokenId: string;
+  operationRef: string;
+  transactionIds: string[];
+  txHashes: string[];
+}
+
+export interface ReclaimUnclaimedYieldParams {
+  tokenId: string;
+  chainId: TokenChainId;
+  /** Distribution snapshot to reclaim unclaimed funds from. A whole number, at least `1`. */
+  snapshotId: number;
+}
+
+/** Result of {@link TokenizationResource.reclaimUnclaimedYield}. */
+export interface ReclaimUnclaimedYieldResult {
+  tokenId: string;
+  /** Snapshot id, as a numeric string. */
+  snapshotId: string;
+  /** Amount reclaimed, as a decimal string. */
+  reclaimed: string;
+  operationRef: string;
+  txHash: string;
+}
+
+/** Result of {@link TokenizationResource.claimYield}. */
 export interface YieldTxResult {
   txHash: string;
 }
 
-/** Result of a yield operation that also returns an operation reference (distribute, pay-coupon). */
+/** Result of {@link TokenizationResource.distributeYield} / {@link TokenizationResource.payCoupon}. */
 export interface YieldOperationResult {
+  tokenId: string;
   operationRef: string;
+  transactionId: string;
   txHash: string;
 }
