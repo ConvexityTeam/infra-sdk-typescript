@@ -7,10 +7,14 @@ async function main() {
   const deployment = await client.tokenization.createToken({
     ticker: "ACMB3",
     name: "Acme 3yr Bond",
-    chainId: "84532",
+    price: 1000,
+    chainId: 84532,
     decimals: 18,
     assetClass: "MONEY_MARKET",
     tokenType: "YIELD_BEARING",
+    maxShareholders: 0, // unlimited
+    maxTokensPerInvestor: 0, // unlimited
+    lockUpDuration: 0,
     yieldParams: {
       annualRate: 8.5,
       maturityDate: "2029-07-01",
@@ -18,6 +22,8 @@ async function main() {
       couponInterval: 180,
       dayCount: "ACT_365",
       faceValuePerToken: 1000,
+      gracePeriod: 604800, // 7 days
+      callable: false,
     },
   });
   console.log(`Token ${deployment.id} deploying (${deployment.operationRef})`);
@@ -35,12 +41,18 @@ async function main() {
   await client.tokenization.mintToken({ tokenId: token.id, chainId: "84532", toAddress: "0xInvestor...", amount: 10 });
 
   // Pay the scheduled coupon, pushing funds directly to investors.
-  const coupon = await client.tokenization.payCoupon({ tokenId: token.id, chainId: "84532", pushYield: true });
+  const coupon = await client.tokenization.payCoupon({
+    tokenId: token.id,
+    chainId: "84532",
+    pushYield: true,
+    reclaimAfter: 86400, // unclaimed funds can be reclaimed after 1 day
+    memo: "First coupon",
+  });
   console.log(`Coupon paid: ${coupon.txHash}`);
 
   // At maturity, redeem principal.
-  const redemption = await client.tokenization.redeemPrincipal({ tokenId: token.id, chainId: "84532", pushYield: true });
-  console.log(`Principal redeemed: ${redemption.txHash}`);
+  const redemption = await client.tokenization.redeemPrincipal({ tokenId: token.id, chainId: "84532" });
+  console.log(`Principal redeemed: ${redemption.txHashes.join(", ")}`);
 }
 
 main().catch((err: unknown) => {

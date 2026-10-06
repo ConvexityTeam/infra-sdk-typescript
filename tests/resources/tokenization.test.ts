@@ -22,10 +22,14 @@ describe("TokenizationResource", () => {
     const result = await client.tokenization.createToken({
       ticker: "ACMB3",
       name: "Acme Bond",
+      price: 1000,
       chainId: "84532",
       decimals: 18,
       assetClass: "MONEY_MARKET",
       tokenType: "ASSET",
+      maxShareholders: 0,
+      maxTokensPerInvestor: 0,
+      lockUpDuration: 0,
     });
 
     expect(result.status).toBe("PENDING");
@@ -131,24 +135,111 @@ describe("TokenizationResource", () => {
     expect(req?.url.searchParams.get("tokenId")).toBe("tok_1");
   });
 
-  it("distributeYield posts fundAmount and returns operationRef + txHash", async () => {
+  it("distributeYield posts the payout and returns the operation with its transaction", async () => {
     const { client, requests } = createTestClient({
-      responses: [{ status: 200, body: envelope({ operationRef: "distribute_1", txHash: "0xabc" }) }],
+      responses: [
+        {
+          status: 200,
+          body: envelope({ tokenId: "tok_1", operationRef: "distribute_1", transactionId: "tx_1", txHash: "0xabc" }),
+        },
+      ],
     });
-    const result = await client.tokenization.distributeYield({ tokenId: "tok_1", chainId: "84532", fundAmount: 1000 });
-    expect(result.operationRef).toBe("distribute_1");
+    const result = await client.tokenization.distributeYield({
+      tokenId: "tok_1",
+      chainId: 84532,
+      payoutToken: "CNGN",
+      fundAmount: 1000,
+      reclaimAfter: 86400,
+      pushYield: true,
+      memo: "Dividend payout",
+    });
+    expect(result).toMatchObject({ tokenId: "tok_1", operationRef: "distribute_1", transactionId: "tx_1" });
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/distribute");
+    // A numeric chainId is sent through as-is; the API coerces it.
+    expect(requests[0]?.body).toMatchObject({ chainId: 84532, fundAmount: 1000, pushYield: true });
+    expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("payCoupon posts to pay-coupon with an Idempotency-Key", async () => {
     const { client, requests } = createTestClient({
-      responses: [{ status: 200, body: envelope({ operationRef: "coupon_1", txHash: "0xabc" }) }],
+      responses: [
+        {
+          status: 200,
+          body: envelope({ tokenId: "tok_1", operationRef: "coupon_1", transactionId: "tx_1", txHash: "0xabc" }),
+        },
+      ],
     });
-    const result = await client.tokenization.payCoupon({ tokenId: "tok_1", chainId: "84532", pushYield: true });
+    const result = await client.tokenization.payCoupon({
+      tokenId: "tok_1",
+      chainId: "84532",
+      pushYield: true,
+      reclaimAfter: 86400,
+      memo: "Coupon payout",
+    });
     expect(result.operationRef).toBe("coupon_1");
+    expect(result.transactionId).toBe("tx_1");
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/pay-coupon");
-    expect(requests[0]?.body).toMatchObject({ pushYield: true });
+    expect(requests[0]?.body).toMatchObject({ pushYield: true, reclaimAfter: 86400, memo: "Coupon payout" });
     expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("updateYield patches the rate without an Idempotency-Key and returns old and new rates", async () => {
+    const { client, requests } = createTestClient({
+      responses: [{ status: 200, body: envelope({ currentRate: 27.55, newRate: 25.55, txHash: "0xabc" }) }],
+    });
+    const result = await client.tokenization.updateYield({ tokenId: "tok_1", chainId: "84532", annualRate: 25.55 });
+    expect(result).toEqual({ currentRate: 27.55, newRate: 25.55, txHash: "0xabc" });
+    expect(requests[0]?.method).toBe("PATCH");
+    expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield");
+    expect(requests[0]?.headers.get("Idempotency-Key")).toBeNull();
+  });
+
+  it("redeemPrincipal returns every payout transaction", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            operationRef: "redeemPrincipal_1",
+            transactionIds: ["tx_1", "tx_2"],
+            txHashes: ["0x1", "0x2"],
+          }),
+        },
+      ],
+    });
+    const result = await client.tokenization.redeemPrincipal({ tokenId: "tok_1", chainId: "84532" });
+    expect(result.transactionIds).toEqual(["tx_1", "tx_2"]);
+    expect(result.txHashes).toEqual(["0x1", "0x2"]);
+    expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/redeem");
+    expect(requests[0]?.body).toEqual({ tokenId: "tok_1", chainId: "84532" });
+    expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("reclaimUnclaimedYield posts the snapshot with an Idempotency-Key and returns the reclaimed amount", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            snapshotId: "1",
+            reclaimed: "10",
+            operationRef: "reclaim_1",
+            txHash: "0xabc",
+          }),
+        },
+      ],
+    });
+    const result = await client.tokenization.reclaimUnclaimedYield(
+      { tokenId: "tok_1", chainId: "84532", snapshotId: 1 },
+      { idempotencyKey: "my-fixed-key" },
+    );
+    expect(result).toMatchObject({ snapshotId: "1", reclaimed: "10", operationRef: "reclaim_1" });
+    expect(requests[0]?.method).toBe("POST");
+    expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/reclaim");
+    expect(requests[0]?.body).toEqual({ tokenId: "tok_1", chainId: "84532", snapshotId: 1 });
+    expect(requests[0]?.headers.get("Idempotency-Key")).toBe("my-fixed-key");
   });
 
   it("getWalletBalance sends tokenId, chainId and walletAddress as query params", async () => {

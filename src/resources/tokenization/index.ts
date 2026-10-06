@@ -15,7 +15,10 @@ import type {
   ListTokensParams,
   MintTokenParams,
   PayCouponParams,
+  ReclaimUnclaimedYieldParams,
+  ReclaimUnclaimedYieldResult,
   RedeemPrincipalParams,
+  RedeemPrincipalResult,
   RegisterTokenWalletParams,
   RegisterTokenWalletResult,
   TokenDeploymentResult,
@@ -28,6 +31,7 @@ import type {
   TokenWalletBalance,
   TransferTokenParams,
   UpdateTokenYieldParams,
+  UpdateYieldResult,
   YieldOperationResult,
   YieldTxResult,
 } from "./types.js";
@@ -37,8 +41,8 @@ export * from "./types.js";
 /**
  * The Tokenization service — issues and manages tokenized real-world assets: deployment,
  * mint/burn/transfer, wallet whitelisting, holder balances, and the yield lifecycle
- * (rate updates, coupon payments, claims, and principal redemption) for `YIELD_BEARING`
- * tokens.
+ * (rate updates, coupon payments, claims, principal redemption, and reclaiming unclaimed
+ * payouts) for `YIELD_BEARING` tokens.
  */
 export class TokenizationResource extends APIResource {
   /**
@@ -227,8 +231,8 @@ export class TokenizationResource extends APIResource {
   }
 
   /** Updates the annual yield rate for a yield-bearing token. */
-  async updateYield(params: UpdateTokenYieldParams, overrides: RequestOverrides = {}): Promise<YieldTxResult> {
-    return this.client.request<YieldTxResult>({
+  async updateYield(params: UpdateTokenYieldParams, overrides: RequestOverrides = {}): Promise<UpdateYieldResult> {
+    return this.client.request<UpdateYieldResult>({
       method: "PATCH",
       path: "/v1/tokens/yield",
       body: params,
@@ -281,15 +285,33 @@ export class TokenizationResource extends APIResource {
     });
   }
 
-  /** Redeems principal to holders at maturity. Set `pushYield` to push funds rather than let investors claim. */
+  /** Redeems principal to holders at maturity. */
   async redeemPrincipal(
     params: RedeemPrincipalParams,
     overrides: IdempotentRequestOverrides = {},
-  ): Promise<YieldTxResult> {
+  ): Promise<RedeemPrincipalResult> {
     const { idempotencyKey, ...rest } = overrides;
-    return this.client.request<YieldTxResult>({
+    return this.client.request<RedeemPrincipalResult>({
       method: "POST",
       path: "/v1/tokens/yield/redeem",
+      body: params,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
+    });
+  }
+
+  /**
+   * Returns a snapshot's unclaimed yield to the issuer once its `reclaimAfter` window has
+   * passed. An `Idempotency-Key` is generated per call unless you pass your own.
+   */
+  async reclaimUnclaimedYield(
+    params: ReclaimUnclaimedYieldParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<ReclaimUnclaimedYieldResult> {
+    const { idempotencyKey, ...rest } = overrides;
+    return this.client.request<ReclaimUnclaimedYieldResult>({
+      method: "POST",
+      path: "/v1/tokens/yield/reclaim",
       body: params,
       idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
       ...rest,
