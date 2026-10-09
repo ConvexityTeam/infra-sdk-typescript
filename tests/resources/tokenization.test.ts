@@ -183,18 +183,61 @@ describe("TokenizationResource", () => {
     expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("updateYield patches the rate without an Idempotency-Key and returns old and new rates", async () => {
+  it("updateYield patches the rate with a generated Idempotency-Key and returns old and new rates", async () => {
+    const response = {
+      currentRate: 27.55,
+      newRate: 25.55,
+      operationRef: "updateYield_1",
+      txHash: "0xabc",
+    };
     const { client, requests } = createTestClient({
-      responses: [{ status: 200, body: envelope({ currentRate: 27.55, newRate: 25.55, txHash: "0xabc" }) }],
+      responses: [{ status: 200, body: envelope(response) }],
     });
     const result = await client.tokenization.updateYield({ tokenId: "tok_1", chainId: "84532", annualRate: 25.55 });
-    expect(result).toEqual({ currentRate: 27.55, newRate: 25.55, txHash: "0xabc" });
+    expect(result).toEqual(response);
     expect(requests[0]?.method).toBe("PATCH");
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield");
-    expect(requests[0]?.headers.get("Idempotency-Key")).toBeNull();
+    expect(requests[0]?.body).toEqual({ tokenId: "tok_1", chainId: "84532", annualRate: 25.55 });
+    expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("redeemPrincipal returns every payout transaction", async () => {
+  it("updateYield sends the caller's own Idempotency-Key when given", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            currentRate: 5,
+            newRate: 6,
+            operationRef: "updateYield_2",
+            txHash: "0xdef",
+          }),
+        },
+      ],
+    });
+    await client.tokenization.updateYield(
+      { tokenId: "tok_1", chainId: "84532", annualRate: 6 },
+      { idempotencyKey: "rate-change-2026-10" },
+    );
+    expect(requests[0]?.headers.get("Idempotency-Key")).toBe("rate-change-2026-10");
+  });
+
+  it("claimYield posts the claim with a generated Idempotency-Key and returns the operationRef", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        { status: 200, body: envelope({ operationRef: "claimYield_1", txHash: "0xclaim" }) },
+      ],
+    });
+    const params = { tokenId: "tok_1", chainId: "84532", investorAddressIndex: 12, snapshotId: 4 };
+    const result = await client.tokenization.claimYield(params);
+    expect(result).toEqual({ operationRef: "claimYield_1", txHash: "0xclaim" });
+    expect(requests[0]?.method).toBe("POST");
+    expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/claim");
+    expect(requests[0]?.body).toEqual(params);
+    expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("redeemPrincipal returns every transaction, what was paid, and who was skipped", async () => {
     const { client, requests } = createTestClient({
       responses: [
         {
@@ -202,15 +245,27 @@ describe("TokenizationResource", () => {
           body: envelope({
             tokenId: "tok_1",
             operationRef: "redeemPrincipal_1",
-            transactionIds: ["tx_1", "tx_2"],
-            txHashes: ["0x1", "0x2"],
+            transactionIds: ["tx_burn", "tx_1"],
+            txHashes: ["0xburn", "0x1"],
+            redeemedHolders: 1,
+            paidPrincipal: "100000000000",
+            paidPrincipalFormatted: "100000.0",
+            unreconciledBatches: [],
+            skipped: [{ address: "0xfrozen", balance: "5000000000000000000", reasons: ["FROZEN"] }],
+            treasuryBurned: { amount: "10000000000000000000", txHash: "0xburn" },
+            outstandingSupply: "5000000000000000000",
+            closed: false,
           }),
         },
       ],
     });
     const result = await client.tokenization.redeemPrincipal({ tokenId: "tok_1", chainId: "84532" });
-    expect(result.transactionIds).toEqual(["tx_1", "tx_2"]);
-    expect(result.txHashes).toEqual(["0x1", "0x2"]);
+    expect(result.transactionIds).toEqual(["tx_burn", "tx_1"]);
+    expect(result.txHashes).toEqual(["0xburn", "0x1"]);
+    expect(result.paidPrincipalFormatted).toBe("100000.0");
+    expect(result.skipped[0]?.reasons).toEqual(["FROZEN"]);
+    expect(result.treasuryBurned?.txHash).toBe("0xburn");
+    expect(result.closed).toBe(false);
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/redeem");
     expect(requests[0]?.body).toEqual({ tokenId: "tok_1", chainId: "84532" });
     expect(requests[0]?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
@@ -242,6 +297,66 @@ describe("TokenizationResource", () => {
     expect(requests[0]?.headers.get("Idempotency-Key")).toBe("my-fixed-key");
   });
 
+  it("getNextCoupon GETs the schedule with tokenId and chainId as query params, without an Idempotency-Key", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            chainId: "84532",
+            status: "SCHEDULED",
+            nextCouponDate: "2026-10-31T00:00:00.000Z",
+            graceEndsAt: "2026-11-07T00:00:00.000Z",
+            isDue: false,
+            couponPeriodSeconds: 2592000,
+            maturityDate: "2027-10-01T00:00:00.000Z",
+            couponPerToken: "20.547945",
+          }),
+        },
+      ],
+    });
+
+    const result = await client.tokenization.getNextCoupon({ tokenId: "tok_1", chainId: 84532 });
+
+    expect(result.status).toBe("SCHEDULED");
+    expect(result.nextCouponDate).toBe("2026-10-31T00:00:00.000Z");
+    expect(result.isDue).toBe(false);
+    const req = requests[0];
+    expect(req?.method).toBe("GET");
+    expect(req?.url.pathname).toBe("/v1/tokens/yield/next-coupon");
+    expect(req?.url.searchParams.get("tokenId")).toBe("tok_1");
+    expect(req?.url.searchParams.get("chainId")).toBe("84532");
+    expect(req?.headers.get("Idempotency-Key")).toBeNull();
+    expect(req?.body).toBeUndefined();
+  });
+
+  it("getNextCoupon passes null dates through once coupons are over", async () => {
+    const { client } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            chainId: "84532",
+            status: "CLOSED",
+            nextCouponDate: null,
+            graceEndsAt: null,
+            isDue: false,
+            couponPeriodSeconds: 2592000,
+            maturityDate: "2027-10-01T00:00:00.000Z",
+            couponPerToken: "20.547945",
+          }),
+        },
+      ],
+    });
+
+    const result = await client.tokenization.getNextCoupon({ tokenId: "tok_1", chainId: "84532" });
+
+    expect(result.status).toBe("CLOSED");
+    expect(result.nextCouponDate).toBeNull();
+  });
+
   it("getWalletBalance sends tokenId, chainId and walletAddress as query params", async () => {
     const { client, requests } = createTestClient({
       responses: [
@@ -254,6 +369,7 @@ describe("TokenizationResource", () => {
             walletAddress: "0xabc",
             balance: "75.0",
             decimals: 18,
+            cNgnBalance: "1234.56",
           }),
         },
       ],
@@ -267,6 +383,7 @@ describe("TokenizationResource", () => {
 
     expect(result.balance).toBe("75.0");
     expect(result.decimals).toBe(18);
+    expect(result.cNgnBalance).toBe("1234.56");
     const req = requests[0];
     expect(req?.method).toBe("GET");
     expect(req?.url.pathname).toBe("/v1/tokens/balance");

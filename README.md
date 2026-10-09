@@ -56,7 +56,8 @@ There are fuller examples in [`examples/`](./examples):
 - [`pagination.ts`](./examples/pagination.ts) shows all three ways to consume a paginated
   list.
 - [`tokenization-yield-lifecycle.ts`](./examples/tokenization-yield-lifecycle.ts) walks a
-  yield-bearing token from issue through mint, coupon payment, and principal redemption.
+  yield-bearing token from issue through mint, checking the coupon schedule (`getNextCoupon`),
+  coupon payment, and principal redemption.
 - [`indexer-subscription.ts`](./examples/indexer-subscription.ts) subscribes to on-chain
   events and manages the subscription afterward.
 - [`webhook-verification.ts`](./examples/webhook-verification.ts) verifies both signature
@@ -132,8 +133,8 @@ const holders = await (await client.tokenization.getTokenHolders({ tokenId })).t
 
 `initiateTransfer`, `signTransaction`, and `generateWallets` all require an
 `Idempotency-Key` header, as do the tokenization write methods (`createToken`, `mintToken`,
-`burnToken`, `transferToken`, `forcedTransfer`, `registerWallet`, `distributeYield`,
-`payCoupon`, `claimYield`, `redeemPrincipal`, `reclaimUnclaimedYield`). The SDK generates a
+`burnToken`, `transferToken`, `forcedTransfer`, `registerWallet`, `updateYield`,
+`distributeYield`, `payCoupon`, `claimYield`, `redeemPrincipal`, `reclaimUnclaimedYield`). The SDK generates a
 UUIDv4 per call. Pass your own when you need a retry to line up across two separate SDK calls,
 like after a process restart:
 

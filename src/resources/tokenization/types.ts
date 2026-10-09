@@ -4,7 +4,9 @@ export type TokenType = "ASSET" | "YIELD_BEARING";
 
 export type TokenStatus = LooseUnion<"PENDING" | "ACTIVE" | "PAUSED" | "RETIRED">;
 
-export type TokenTransactionType = LooseUnion<"MINT" | "BURN" | "TRANSFER" | "DEPLOY" | "REDEEM" | "SNAPSHOT">;
+export type TokenTransactionType = LooseUnion<
+  "MINT" | "BURN" | "TRANSFER" | "DEPLOY" | "REDEEM" | "SNAPSHOT" | "FORCED_TRANSFER"
+>;
 
 export type TokenTransactionStatus = LooseUnion<"PENDING" | "CONFIRMED" | "FAILED">;
 
@@ -242,6 +244,8 @@ export interface TokenWalletBalance {
   /** Balance in token units, as a decimal string. */
   balance: string;
   decimals: number;
+  /** The wallet's cNGN (payout token) balance, as a decimal string. Coupons, yield and principal are paid in cNGN. */
+  cNgnBalance: string;
 }
 
 export interface ListTokenTransactionsParams {
@@ -296,6 +300,7 @@ export interface UpdateYieldResult {
   currentRate: number;
   /** Annual rate after the update, as a percentage. */
   newRate: number;
+  operationRef: string;
   txHash: string;
 }
 
@@ -339,12 +344,93 @@ export interface RedeemPrincipalParams {
   chainId: TokenChainId;
 }
 
-/** Result of {@link TokenizationResource.redeemPrincipal} — one transaction per redemption payout. */
+/**
+ * Why a holder was left out of a redemption. Their principal is still owed once the cause is resolved.
+ *
+ * - `NOT_VERIFIED` — not KYC-verified in the token's identity registry.
+ * - `FROZEN` — the wallet is frozen.
+ * - `NOT_ALLOWLISTED` — removed from the compliance allowlist.
+ * - `SKIPPED_BY_CONTRACT` — eligible when read, but the contract skipped it when the batch executed
+ *   (e.g. it became ineligible in between).
+ */
+export type RedemptionSkipReason = LooseUnion<"NOT_VERIFIED" | "FROZEN" | "NOT_ALLOWLISTED" | "SKIPPED_BY_CONTRACT">;
+
+/** A holder {@link TokenizationResource.redeemPrincipal} did not redeem. */
+export interface RedemptionSkippedHolder {
+  address: string;
+  /** Unredeemed balance in the token's smallest unit, as an integer string. */
+  balance: string;
+  reasons: RedemptionSkipReason[];
+}
+
+/** Result of {@link TokenizationResource.redeemPrincipal}. */
 export interface RedeemPrincipalResult {
   tokenId: string;
   operationRef: string;
+  /** Transaction records created by this run: the issuer-token burn (if any), then one per redemption batch. */
   transactionIds: string[];
+  /** Hashes in send order: the burn, each batch, then the seal that marks the principal repaid (if one was needed). */
   txHashes: string[];
+  /** Holders actually paid, from the contract's `PrincipalRedeemed` events. */
+  redeemedHolders: number;
+  /** Principal actually paid, in cNGN base units (6 decimals), as an integer string. */
+  paidPrincipal: string;
+  /** {@link paidPrincipal} as a decimal cNGN string, e.g. `"100000.0"`. */
+  paidPrincipalFormatted: string;
+  /**
+   * Indexes of batches whose receipt couldn't be read. Their transactions landed, but their paid amounts
+   * are the pre-transaction estimate rather than the on-chain events.
+   */
+  unreconciledBatches: number[];
+  /** Holders that were not redeemed, with their balances and why. */
+  skipped: RedemptionSkippedHolder[];
+  /** Issuer-held (treasury) tokens burned without a payout, or `null` when there were none. Frozen tokens are never burned. */
+  treasuryBurned: { amount: string; txHash: string } | null;
+  /** Supply left after the run, in the token's smallest unit, as an integer string. */
+  outstandingSupply: string;
+  /**
+   * `true` once supply is zero and the bond is marked principal-repaid. While `false`, the remaining
+   * supply belongs to {@link skipped} holders, frozen issuer tokens or the yield distributor.
+   */
+  closed: boolean;
+}
+
+export interface GetNextCouponParams {
+  tokenId: string;
+  chainId: TokenChainId;
+}
+
+/**
+ * Where a bond stands on its coupon schedule.
+ *
+ * - `SCHEDULED` — the next coupon isn't due yet.
+ * - `DUE` — the coupon can be paid now with {@link TokenizationResource.payCoupon}.
+ * - `GRACE_EXPIRED` — the coupon was missed and its grace period has passed; it is still payable,
+ *   but anyone can now flag the bond as defaulted.
+ * - `DEFAULTED` — the bond is in default; no further coupons can be scheduled.
+ * - `NO_MORE_COUPONS` — the schedule has run past maturity; only principal redemption remains.
+ * - `CLOSED` — principal has been repaid and the bond is closed.
+ */
+export type NextCouponStatus = LooseUnion<
+  "SCHEDULED" | "DUE" | "GRACE_EXPIRED" | "DEFAULTED" | "NO_MORE_COUPONS" | "CLOSED"
+>;
+
+/** Result of {@link TokenizationResource.getNextCoupon}. Dates are ISO 8601 strings in UTC. */
+export interface NextCoupon {
+  tokenId: string;
+  chainId: string;
+  status: NextCouponStatus;
+  /** When the next coupon falls due. `null` once there are no more coupons (`NO_MORE_COUPONS` or `CLOSED`). */
+  nextCouponDate: string | null;
+  /** `nextCouponDate` plus the bond's grace period; after this a missed coupon allows a default. `null` with it. */
+  graceEndsAt: string | null;
+  /** `true` when a coupon can be paid now (`DUE` or `GRACE_EXPIRED`). */
+  isDue: boolean;
+  /** Seconds between coupons. */
+  couponPeriodSeconds: number;
+  maturityDate: string;
+  /** Coupon paid per whole token, in cNGN, as a decimal string. */
+  couponPerToken: string;
 }
 
 export interface ReclaimUnclaimedYieldParams {
@@ -367,6 +453,7 @@ export interface ReclaimUnclaimedYieldResult {
 
 /** Result of {@link TokenizationResource.claimYield}. */
 export interface YieldTxResult {
+  operationRef: string;
   txHash: string;
 }
 
