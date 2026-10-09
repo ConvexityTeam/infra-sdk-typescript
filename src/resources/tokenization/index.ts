@@ -10,10 +10,12 @@ import type {
   DistributeYieldParams,
   ForcedTransferTokenParams,
   GetTokenHoldersParams,
+  GetNextCouponParams,
   GetWalletBalanceParams,
   ListTokenTransactionsParams,
   ListTokensParams,
   MintTokenParams,
+  NextCoupon,
   PayCouponParams,
   ReclaimUnclaimedYieldParams,
   ReclaimUnclaimedYieldResult,
@@ -190,7 +192,7 @@ export class TokenizationResource extends APIResource {
     return fetchPage({ page: params.page, pageSize: params.pageSize });
   }
 
-  /** Returns a single wallet's balance of a token on a chain. */
+  /** Returns a single wallet's balance of a token on a chain, plus its cNGN (payout token) balance. */
   async getWalletBalance(
     params: GetWalletBalanceParams,
     overrides: RequestOverrides = {},
@@ -230,13 +232,21 @@ export class TokenizationResource extends APIResource {
     return fetchPage({ page: params.page, pageSize: params.pageSize });
   }
 
-  /** Updates the annual yield rate for a yield-bearing token. */
-  async updateYield(params: UpdateTokenYieldParams, overrides: RequestOverrides = {}): Promise<UpdateYieldResult> {
+  /**
+   * Updates the annual yield rate for a yield-bearing token. An `Idempotency-Key` is generated
+   * per call unless you pass your own.
+   */
+  async updateYield(
+    params: UpdateTokenYieldParams,
+    overrides: IdempotentRequestOverrides = {},
+  ): Promise<UpdateYieldResult> {
+    const { idempotencyKey, ...rest } = overrides;
     return this.client.request<UpdateYieldResult>({
       method: "PATCH",
       path: "/v1/tokens/yield",
       body: params,
-      ...overrides,
+      idempotencyKey: idempotencyKey ?? generateIdempotencyKey(),
+      ...rest,
     });
   }
 
@@ -285,7 +295,37 @@ export class TokenizationResource extends APIResource {
     });
   }
 
-  /** Redeems principal to holders at maturity. */
+  /**
+   * Returns the bond's next coupon date and where it stands on its schedule. Whether a coupon is
+   * due is decided by the chain's clock, not yours, so check `status` (or `isDue`) rather than
+   * comparing `nextCouponDate` with local time. Works for paused tokens too.
+   *
+   * ```ts
+   * const next = await client.tokenization.getNextCoupon({ tokenId, chainId: "84532" });
+   * if (next.status === "DUE") await client.tokenization.payCoupon({ tokenId, chainId: "84532", ... });
+   * ```
+   */
+  async getNextCoupon(
+    params: GetNextCouponParams,
+    overrides: RequestOverrides = {},
+  ): Promise<NextCoupon> {
+    return this.client.request<NextCoupon>({
+      method: "GET",
+      path: "/v1/tokens/yield/next-coupon",
+      query: { ...params },
+      ...overrides,
+    });
+  }
+
+  /**
+   * Redeems principal to holders at maturity, paying from the cNGN deposited in the token contract.
+   * Issuer-held tokens are burned without a payout so the supply can reach zero and the bond close.
+   * Holders that can't be redeemed (frozen, unverified, not allowlisted) are left alone and listed in
+   * `skipped`; check `closed` to see whether the bond is done.
+   *
+   * If a run fails part-way, call it again: holders already redeemed are skipped, so it carries on
+   * where it stopped. Reusing the same `idempotencyKey` only replays the earlier response.
+   */
   async redeemPrincipal(
     params: RedeemPrincipalParams,
     overrides: IdempotentRequestOverrides = {},

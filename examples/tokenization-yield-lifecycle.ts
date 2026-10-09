@@ -40,19 +40,38 @@ async function main() {
   await client.tokenization.registerWallet({ tokenId: token.id, chainId: "84532", walletAddress: "0xInvestor..." });
   await client.tokenization.mintToken({ tokenId: token.id, chainId: "84532", toAddress: "0xInvestor...", amount: 10 });
 
-  // Pay the scheduled coupon, pushing funds directly to investors.
-  const coupon = await client.tokenization.payCoupon({
+  // Pay the scheduled coupon once it falls due, pushing funds directly to investors.
+  const next = await client.tokenization.getNextCoupon({ tokenId: token.id, chainId: "84532" });
+  if (next.status === "DUE" || next.status === "GRACE_EXPIRED") {
+    const coupon = await client.tokenization.payCoupon({
+      tokenId: token.id,
+      chainId: "84532",
+      pushYield: true,
+      reclaimAfter: 86400, // unclaimed funds can be reclaimed after 1 day
+      memo: "First coupon",
+    });
+    console.log(`Coupon paid: ${coupon.txHash}`);
+  } else {
+    console.log(
+      `Next coupon ${next.status}: ${next.nextCouponDate ?? "none"} (${next.couponPerToken} cNGN per token)`,
+    );
+  }
+
+  // At maturity, redeem principal. Issuer-held tokens are burned; anyone who can't be paid is reported.
+  const redemption = await client.tokenization.redeemPrincipal({
     tokenId: token.id,
     chainId: "84532",
-    pushYield: true,
-    reclaimAfter: 86400, // unclaimed funds can be reclaimed after 1 day
-    memo: "First coupon",
   });
-  console.log(`Coupon paid: ${coupon.txHash}`);
-
-  // At maturity, redeem principal.
-  const redemption = await client.tokenization.redeemPrincipal({ tokenId: token.id, chainId: "84532" });
-  console.log(`Principal redeemed: ${redemption.txHashes.join(", ")}`);
+  console.log(
+    `Paid ${redemption.paidPrincipalFormatted} cNGN to ${redemption.redeemedHolders} holders`,
+  );
+  for (const holder of redemption.skipped)
+    console.log(`  not redeemed: ${holder.address} (${holder.reasons.join(", ")})`);
+  console.log(
+    redemption.closed
+      ? "Bond closed"
+      : `Bond still open: ${redemption.outstandingSupply} units outstanding`,
+  );
 }
 
 main().catch((err: unknown) => {
