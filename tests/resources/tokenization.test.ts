@@ -111,6 +111,90 @@ describe("TokenizationResource", () => {
     expect(requests[0]?.headers.get("Idempotency-Key")).toBe("my-fixed-key");
   });
 
+  it("transferToken resolves, rather than throws, when the transfer failed on-chain", async () => {
+    const { client } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            status: "FAILED",
+            transactionId: "tx_1",
+            fromAddressIndex: 2,
+            toAddress: "0xto",
+            amount: 50,
+            txHash: "0xreverted",
+            operationRef: "transfer_1",
+          }),
+        },
+      ],
+    });
+
+    const result = await client.tokenization.transferToken({
+      tokenId: "tok_1",
+      chainId: "84532",
+      fromAddressIndex: 2,
+      toAddress: "0xto",
+      amount: 50,
+    });
+
+    expect(result).toMatchObject({ status: "FAILED", txHash: "0xreverted" });
+  });
+
+  it("getTokenTransaction fetches by operationRef and returns push and claim fields", async () => {
+    const snapshot = {
+      id: "tx_snap",
+      tokenId: "tok_1",
+      chainId: "84532",
+      type: "SNAPSHOT",
+      status: "CONFIRMED",
+      amount: "1000",
+      txHash: "0xsnap",
+      operationRef: "distributeYield_1",
+      snapshotId: 4,
+      pushYield: true,
+      pushStatus: "PUSHED",
+      pushTxHash: "0xpush",
+    };
+    const claim = {
+      id: "tx_claim",
+      tokenId: "tok_1",
+      chainId: "84532",
+      type: "CLAIM",
+      status: "FAILED",
+      amount: "12",
+      txHash: "0xclaim",
+      operationRef: "claimYield_1",
+      snapshotId: 4,
+      failureReason: "Transaction reverted on-chain",
+    };
+    const { client, requests } = createTestClient({
+      responses: [
+        { status: 200, body: envelope(snapshot) },
+        { status: 200, body: envelope(claim) },
+      ],
+    });
+
+    const pushed = await client.tokenization.getTokenTransaction("distributeYield_1");
+    const claimed = await client.tokenization.getTokenTransaction("claimYield_1");
+
+    expect(pushed).toMatchObject({
+      type: "SNAPSHOT",
+      pushYield: true,
+      pushStatus: "PUSHED",
+      pushTxHash: "0xpush",
+    });
+    expect(claimed).toMatchObject({
+      type: "CLAIM",
+      status: "FAILED",
+      failureReason: "Transaction reverted on-chain",
+    });
+    expect(requests.map((r) => r.url.pathname)).toEqual([
+      "/v1/tokens/transactions/distributeYield_1",
+      "/v1/tokens/transactions/claimYield_1",
+    ]);
+  });
+
   it("getTokenHolders requires tokenId as a query param and paginates", async () => {
     const { client, requests } = createTestClient({
       responses: [
@@ -222,15 +306,28 @@ describe("TokenizationResource", () => {
     expect(requests[0]?.headers.get("Idempotency-Key")).toBe("rate-change-2026-10");
   });
 
-  it("claimYield posts the claim with a generated Idempotency-Key and returns the operationRef", async () => {
+  it("claimYield posts the claim with a generated Idempotency-Key and returns the claim's transaction and status", async () => {
     const { client, requests } = createTestClient({
       responses: [
-        { status: 200, body: envelope({ operationRef: "claimYield_1", txHash: "0xclaim" }) },
+        {
+          status: 200,
+          body: envelope({
+            operationRef: "claimYield_1",
+            transactionId: "tx_claim",
+            txHash: "0xclaim",
+            status: "COMPLETED",
+          }),
+        },
       ],
     });
     const params = { tokenId: "tok_1", chainId: "84532", investorAddressIndex: 12, snapshotId: 4 };
     const result = await client.tokenization.claimYield(params);
-    expect(result).toEqual({ operationRef: "claimYield_1", txHash: "0xclaim" });
+    expect(result).toEqual({
+      operationRef: "claimYield_1",
+      transactionId: "tx_claim",
+      txHash: "0xclaim",
+      status: "COMPLETED",
+    });
     expect(requests[0]?.method).toBe("POST");
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/claim");
     expect(requests[0]?.body).toEqual(params);
@@ -278,10 +375,12 @@ describe("TokenizationResource", () => {
           status: 200,
           body: envelope({
             tokenId: "tok_1",
-            snapshotId: "1",
-            reclaimed: "10",
+            snapshotId: 1,
+            reclaimed: "10000000",
             operationRef: "reclaim_1",
+            transactionId: "tx_reclaim",
             txHash: "0xabc",
+            status: "SUBMITTED",
           }),
         },
       ],
@@ -290,7 +389,13 @@ describe("TokenizationResource", () => {
       { tokenId: "tok_1", chainId: "84532", snapshotId: 1 },
       { idempotencyKey: "my-fixed-key" },
     );
-    expect(result).toMatchObject({ snapshotId: "1", reclaimed: "10", operationRef: "reclaim_1" });
+    expect(result).toMatchObject({
+      snapshotId: 1,
+      reclaimed: "10000000",
+      operationRef: "reclaim_1",
+      transactionId: "tx_reclaim",
+      status: "SUBMITTED",
+    });
     expect(requests[0]?.method).toBe("POST");
     expect(requests[0]?.url.pathname).toBe("/v1/tokens/yield/reclaim");
     expect(requests[0]?.body).toEqual({ tokenId: "tok_1", chainId: "84532", snapshotId: 1 });
@@ -369,7 +474,6 @@ describe("TokenizationResource", () => {
             walletAddress: "0xabc",
             balance: "75.0",
             decimals: 18,
-            cNgnBalance: "1234.56",
           }),
         },
       ],
@@ -383,13 +487,45 @@ describe("TokenizationResource", () => {
 
     expect(result.balance).toBe("75.0");
     expect(result.decimals).toBe(18);
-    expect(result.cNgnBalance).toBe("1234.56");
+    expect(result).not.toHaveProperty("cNgnBalance");
     const req = requests[0];
     expect(req?.method).toBe("GET");
     expect(req?.url.pathname).toBe("/v1/tokens/balance");
     expect(req?.url.searchParams.get("tokenId")).toBe("tok_1");
     expect(req?.url.searchParams.get("chainId")).toBe("84532");
     expect(req?.url.searchParams.get("walletAddress")).toBe("0xabc");
+  });
+
+  it("getPayoutBalance sends only chainId and walletAddress as query params", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            chainId: "84532",
+            walletAddress: "0xabc",
+            payoutToken: "CNGN",
+            tokenAddress: "0xcngn",
+            balance: "1234.56",
+            decimals: 6,
+          }),
+        },
+      ],
+    });
+
+    const result = await client.tokenization.getPayoutBalance({
+      chainId: "84532",
+      walletAddress: "0xabc",
+    });
+
+    expect(result).toMatchObject({ payoutToken: "CNGN", balance: "1234.56", decimals: 6 });
+    const req = requests[0];
+    expect(req?.method).toBe("GET");
+    expect(req?.url.pathname).toBe("/v1/tokens/payout-balance");
+    expect(req?.url.searchParams.get("chainId")).toBe("84532");
+    expect(req?.url.searchParams.get("walletAddress")).toBe("0xabc");
+    expect(req?.url.searchParams.has("tokenId")).toBe(false);
+    expect(req?.headers.get("Idempotency-Key")).toBeNull();
   });
 
   it("forcedTransfer posts the body with an Idempotency-Key, generated or caller-supplied", async () => {

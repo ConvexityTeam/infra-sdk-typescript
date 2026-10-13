@@ -5,10 +5,39 @@ export type TokenType = "ASSET" | "YIELD_BEARING";
 export type TokenStatus = LooseUnion<"PENDING" | "ACTIVE" | "PAUSED" | "RETIRED">;
 
 export type TokenTransactionType = LooseUnion<
-  "MINT" | "BURN" | "TRANSFER" | "DEPLOY" | "REDEEM" | "SNAPSHOT" | "FORCED_TRANSFER"
+  | "MINT"
+  | "BURN"
+  | "TRANSFER"
+  | "DEPLOY"
+  | "REDEEM"
+  | "SNAPSHOT"
+  | "FORCED_TRANSFER"
+  | "CLAIM"
+  | "RECLAIM"
 >;
 
 export type TokenTransactionStatus = LooseUnion<"PENDING" | "CONFIRMED" | "FAILED">;
+
+/**
+ * Where pushing a distribution's yield to investors stands, on a `SNAPSHOT` transaction created
+ * with `pushYield: true`.
+ *
+ * - `PENDING` — requested; the push runs once the snapshot confirms.
+ * - `SUBMITTED` — the push transaction was sent but hasn't settled yet.
+ * - `PUSHED` — the push transaction was mined and succeeded.
+ * - `FAILED` — the push failed; see `pushFailureReason`.
+ */
+export type YieldPushStatus = LooseUnion<"PENDING" | "SUBMITTED" | "PUSHED" | "FAILED">;
+
+/**
+ * Outcome of a yield claim or reclaim when the call returns.
+ *
+ * - `COMPLETED` — the transaction was mined and succeeded.
+ * - `SUBMITTED` — the transaction was sent but hasn't settled yet. Poll
+ *   {@link TokenizationResource.getTokenTransaction} with the result's `operationRef`; its `status`
+ *   becomes `CONFIRMED` or `FAILED`.
+ */
+export type YieldSettlementStatus = LooseUnion<"COMPLETED" | "SUBMITTED">;
 
 /**
  * Chain id a token is deployed on, e.g. `84532` (Base Sepolia). The API accepts it as a number
@@ -194,6 +223,11 @@ export interface TokenOperationResult {
 /** Result of {@link TokenizationResource.transferToken}. */
 export interface TokenTransferResult {
   tokenId: string;
+  /**
+   * `CONFIRMED` once mined. `FAILED` when the transfer was rejected or reverted on-chain; the call
+   * still resolves in that case, so check this rather than relying on an error. `txHash` is set
+   * when the failed transfer was mined.
+   */
   status: TokenTransactionStatus;
   transactionId: string;
   fromAddressIndex: number;
@@ -244,8 +278,26 @@ export interface TokenWalletBalance {
   /** Balance in token units, as a decimal string. */
   balance: string;
   decimals: number;
-  /** The wallet's cNGN (payout token) balance, as a decimal string. Coupons, yield and principal are paid in cNGN. */
-  cNgnBalance: string;
+}
+
+export interface GetPayoutBalanceParams {
+  chainId: TokenChainId;
+  walletAddress: string;
+}
+
+/**
+ * A wallet's balance of the chain's payout token, returned by
+ * {@link TokenizationResource.getPayoutBalance}. Coupons, yield and principal are all paid in it.
+ */
+export interface PayoutBalance {
+  chainId: string;
+  walletAddress: string;
+  payoutToken: YieldPayoutToken;
+  /** The payout token's contract address on this chain. */
+  tokenAddress: string;
+  /** Balance in payout-token units, as a decimal string, e.g. `"1234.56"`. */
+  balance: string;
+  decimals: number;
 }
 
 export interface ListTokenTransactionsParams {
@@ -261,7 +313,10 @@ export interface ListTokenTransactionsParams {
   operationRef?: string;
 }
 
-/** A recorded on-chain operation against a token (mint, burn, or transfer). */
+/**
+ * A recorded on-chain operation against a token: a mint, burn or transfer, a deployment, a yield
+ * distribution (`SNAPSHOT`), or a yield claim (`CLAIM`) or reclaim (`RECLAIM`).
+ */
 export interface TokenTransactionRecord {
   id: string;
   tokenId: string;
@@ -282,8 +337,18 @@ export interface TokenTransactionRecord {
   memo?: string;
   createdAt?: string;
   confirmedAt?: string;
-  /** Distribution snapshot id, set on `SNAPSHOT` transactions. */
+  /** Distribution snapshot id, set on `SNAPSHOT`, `CLAIM` and `RECLAIM` transactions. */
   snapshotId?: number;
+  /** Why the transaction failed, when `status` is `FAILED`. */
+  failureReason?: string;
+  /** Whether the distribution pushes yield to investors. Set on `SNAPSHOT` transactions. */
+  pushYield?: boolean;
+  /** Progress of the push, on `SNAPSHOT` transactions with `pushYield`. Absent when no push was requested or made. */
+  pushStatus?: YieldPushStatus;
+  /** Hash of the push transaction, once sent. */
+  pushTxHash?: string;
+  /** Why the push failed, when `pushStatus` is `FAILED`. */
+  pushFailureReason?: string;
 }
 
 export interface UpdateTokenYieldParams {
@@ -443,18 +508,23 @@ export interface ReclaimUnclaimedYieldParams {
 /** Result of {@link TokenizationResource.reclaimUnclaimedYield}. */
 export interface ReclaimUnclaimedYieldResult {
   tokenId: string;
-  /** Snapshot id, as a numeric string. */
-  snapshotId: string;
-  /** Amount reclaimed, as a decimal string. */
+  snapshotId: number;
+  /** Amount reclaimed, in cNGN base units (6 decimals), as an integer string. */
   reclaimed: string;
   operationRef: string;
+  /** Id of the `RECLAIM` transaction record. */
+  transactionId: string;
   txHash: string;
+  status: YieldSettlementStatus;
 }
 
 /** Result of {@link TokenizationResource.claimYield}. */
 export interface YieldTxResult {
   operationRef: string;
+  /** Id of the `CLAIM` transaction record. */
+  transactionId: string;
   txHash: string;
+  status: YieldSettlementStatus;
 }
 
 /** Result of {@link TokenizationResource.distributeYield} / {@link TokenizationResource.payCoupon}. */

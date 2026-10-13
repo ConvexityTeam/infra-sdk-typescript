@@ -12,6 +12,8 @@ import type {
   GetTokenHoldersParams,
   GetNextCouponParams,
   GetWalletBalanceParams,
+  GetPayoutBalanceParams,
+  PayoutBalance,
   ListTokenTransactionsParams,
   ListTokensParams,
   MintTokenParams,
@@ -128,7 +130,10 @@ export class TokenizationResource extends APIResource {
     });
   }
 
-  /** Transfers token units between holder addresses. */
+  /**
+   * Transfers token units between holder addresses. A transfer that is rejected or reverts
+   * on-chain still resolves, with `status: "FAILED"`, so check `status` rather than relying on an error.
+   */
   async transferToken(
     params: TransferTokenParams,
     overrides: IdempotentRequestOverrides = {},
@@ -192,7 +197,7 @@ export class TokenizationResource extends APIResource {
     return fetchPage({ page: params.page, pageSize: params.pageSize });
   }
 
-  /** Returns a single wallet's balance of a token on a chain, plus its cNGN (payout token) balance. */
+  /** Returns a single wallet's balance of a token on a chain. For its cNGN balance, use {@link getPayoutBalance}. */
   async getWalletBalance(
     params: GetWalletBalanceParams,
     overrides: RequestOverrides = {},
@@ -200,6 +205,22 @@ export class TokenizationResource extends APIResource {
     return this.client.request<TokenWalletBalance>({
       method: "GET",
       path: "/v1/tokens/balance",
+      query: { ...params },
+      ...overrides,
+    });
+  }
+
+  /**
+   * Returns a wallet's balance of the chain's payout token (cNGN), in which coupons, yield and
+   * principal are paid. It depends only on the chain and wallet, so no token is needed.
+   */
+  async getPayoutBalance(
+    params: GetPayoutBalanceParams,
+    overrides: RequestOverrides = {},
+  ): Promise<PayoutBalance> {
+    return this.client.request<PayoutBalance>({
+      method: "GET",
+      path: "/v1/tokens/payout-balance",
       query: { ...params },
       ...overrides,
     });
@@ -280,7 +301,11 @@ export class TokenizationResource extends APIResource {
     });
   }
 
-  /** Claims an investor's yield for a given distribution snapshot. */
+  /**
+   * Claims an investor's yield for a given distribution snapshot. `status` is `COMPLETED` once the
+   * claim is mined. If it's `SUBMITTED`, the outcome isn't known yet: poll
+   * {@link getTokenTransaction} with the result's `operationRef` until its `status` is `CONFIRMED` or `FAILED`.
+   */
   async claimYield(
     params: ClaimYieldParams,
     overrides: IdempotentRequestOverrides = {},
@@ -342,7 +367,8 @@ export class TokenizationResource extends APIResource {
 
   /**
    * Returns a snapshot's unclaimed yield to the issuer once its `reclaimAfter` window has
-   * passed. An `Idempotency-Key` is generated per call unless you pass your own.
+   * passed. An `Idempotency-Key` is generated per call unless you pass your own. As with
+   * {@link claimYield}, a `SUBMITTED` status means the outcome should be polled by `operationRef`.
    */
   async reclaimUnclaimedYield(
     params: ReclaimUnclaimedYieldParams,
