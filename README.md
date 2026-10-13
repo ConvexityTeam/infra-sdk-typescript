@@ -106,6 +106,28 @@ while (final.status === "PENDING" || final.status === "PROCESSING") {
 If you want the old synchronous behavior, pass `waitForCompletion: true`. That holds the
 request open until the transaction settles and returns the final result.
 
+### Tokenization outcomes
+
+Some tokenization writes report their on-chain outcome in the result instead of throwing:
+
+- `transferToken` resolves with `status: "FAILED"` when the transfer reverts on-chain, so check
+  `status` rather than relying on an error.
+- `claimYield` and `reclaimUnclaimedYield` return `status: "COMPLETED"` once mined. `"SUBMITTED"`
+  means the outcome isn't known yet; poll `getTokenTransaction(result.operationRef)` until its
+  `status` is `CONFIRMED` or `FAILED`.
+- A wallet's cNGN balance, the currency coupons, yield and principal are paid in, comes from
+  `getPayoutBalance({ chainId, walletAddress })`. `getWalletBalance` returns only the token balance.
+- Distributions created with `pushYield: true` record the push on their `SNAPSHOT` transaction:
+  `pushStatus` (`PENDING`, `SUBMITTED`, `PUSHED`, `FAILED`), `pushTxHash` and `pushFailureReason`.
+
+```ts
+const claim = await client.tokenization.claimYield({ tokenId, chainId: "84532", investorAddressIndex: 12, snapshotId: 4 });
+if (claim.status === "SUBMITTED") {
+  const tx = await client.tokenization.getTokenTransaction(claim.operationRef);
+  console.log(tx.status); // PENDING until the chain settles it
+}
+```
+
 ### Pagination
 
 The API hands back three different pagination envelopes depending on which service you're
