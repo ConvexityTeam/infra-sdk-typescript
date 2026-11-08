@@ -402,6 +402,57 @@ describe("TokenizationResource", () => {
     expect(requests[0]?.headers.get("Idempotency-Key")).toBe("my-fixed-key");
   });
 
+  it("getYieldPositions GETs the positions with snapshotIds comma separated, without an Idempotency-Key", async () => {
+    const { client, requests } = createTestClient({
+      responses: [
+        {
+          status: 200,
+          body: envelope({
+            tokenId: "tok_1",
+            chainId: "84532",
+            walletAddress: "0xabc",
+            positions: [
+              {
+                snapshotId: 1,
+                settlement: "PAID",
+                claimed: true,
+                active: true,
+                reclaimDeadline: "2026-12-01T00:00:00.000Z",
+                totalFunds: "10000000",
+                snapshotBalance: "100000000000000000000",
+                entitledAmount: "10000000",
+                paidAmount: "10000000",
+                pendingAmount: "0",
+              },
+              { snapshotId: 9, error: { code: "NOT_FOUND_SNAPSHOT", message: "Snapshot 9 not found" } },
+            ],
+          }),
+        },
+      ],
+    });
+
+    const result = await client.tokenization.getYieldPositions({
+      tokenId: "tok_1",
+      chainId: 84532,
+      walletAddress: "0xabc",
+      snapshotIds: [1, 9],
+    });
+
+    const [paid, missing] = result.positions;
+    expect(paid?.error).toBeUndefined();
+    if (paid && !paid.error) expect(paid.paidAmount).toBe("10000000");
+    expect(missing?.error?.code).toBe("NOT_FOUND_SNAPSHOT");
+    const req = requests[0];
+    expect(req?.method).toBe("GET");
+    expect(req?.url.pathname).toBe("/v1/tokens/yield/positions");
+    expect(req?.url.searchParams.get("tokenId")).toBe("tok_1");
+    expect(req?.url.searchParams.get("chainId")).toBe("84532");
+    expect(req?.url.searchParams.get("walletAddress")).toBe("0xabc");
+    expect(req?.url.searchParams.get("snapshotIds")).toBe("1,9");
+    expect(req?.headers.get("Idempotency-Key")).toBeNull();
+    expect(req?.body).toBeUndefined();
+  });
+
   it("getNextCoupon GETs the schedule with tokenId and chainId as query params, without an Idempotency-Key", async () => {
     const { client, requests } = createTestClient({
       responses: [

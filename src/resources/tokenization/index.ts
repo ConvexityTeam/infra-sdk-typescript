@@ -11,6 +11,7 @@ import type {
   ForcedTransferTokenParams,
   GetTokenHoldersParams,
   GetNextCouponParams,
+  GetYieldPositionsParams,
   GetWalletBalanceParams,
   GetPayoutBalanceParams,
   PayoutBalance,
@@ -37,6 +38,7 @@ import type {
   UpdateTokenYieldParams,
   UpdateYieldResult,
   YieldOperationResult,
+  YieldPositions,
   YieldTxResult,
 } from "./types.js";
 
@@ -338,6 +340,32 @@ export class TokenizationResource extends APIResource {
       method: "GET",
       path: "/v1/tokens/yield/next-coupon",
       query: { ...params },
+      ...overrides,
+    });
+  }
+
+  /**
+   * Returns one holder's position in each of the given distribution snapshots: their share, what
+   * they've been paid and what they can still collect. Works for paused and retired tokens. A
+   * snapshot that can't be read is reported on its own entry, so check `error` on each.
+   *
+   * ```ts
+   * const { positions } = await client.tokenization.getYieldPositions({
+   *   tokenId, chainId: "84532", walletAddress, snapshotIds: [1, 2],
+   * });
+   * for (const p of positions) if (!p.error) console.log(p.snapshotId, p.settlement, p.paidAmount);
+   * ```
+   */
+  async getYieldPositions(
+    params: GetYieldPositionsParams,
+    overrides: RequestOverrides = {},
+  ): Promise<YieldPositions> {
+    const { snapshotIds, ...query } = params;
+
+    return this.client.request<YieldPositions>({
+      method: "GET",
+      path: "/v1/tokens/yield/positions",
+      query: { ...query, snapshotIds: snapshotIds.join(",") },
       ...overrides,
     });
   }

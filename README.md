@@ -117,6 +117,9 @@ Some tokenization writes report their on-chain outcome in the result instead of 
   `status` is `CONFIRMED` or `FAILED`.
 - A wallet's cNGN balance, the currency coupons, yield and principal are paid in, comes from
   `getPayoutBalance({ chainId, walletAddress })`. `getWalletBalance` returns only the token balance.
+- One holder's share of each distribution comes from `getYieldPositions`, including what they've
+  been paid and can still collect. `settlement` doesn't separate a push from a claim, because the
+  contract records them the same way.
 - Distributions created with `pushYield: true` record the push on their `SNAPSHOT` transaction:
   `pushStatus` (`PENDING`, `SUBMITTED`, `PUSHED`, `FAILED`), `pushTxHash` and `pushFailureReason`.
 

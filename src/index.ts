@@ -104,6 +104,7 @@ export type {
   GetPayoutBalanceParams,
   PayoutBalance,
   GetNextCouponParams,
+  GetYieldPositionsParams,
   NextCoupon,
   NextCouponStatus,
   ListTokenTransactionsParams,
@@ -121,6 +122,11 @@ export type {
   ReclaimUnclaimedYieldResult,
   YieldTxResult,
   YieldOperationResult,
+  YieldPosition,
+  YieldPositionError,
+  YieldPositionRead,
+  YieldPositions,
+  YieldSettlement,
 } from "./resources/tokenization/index.js";
 
 export { IndexerResource } from "./resources/indexer/index.js";
