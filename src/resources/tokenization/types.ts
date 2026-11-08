@@ -460,6 +460,70 @@ export interface RedeemPrincipalResult {
   closed: boolean;
 }
 
+export interface GetYieldPositionsParams {
+  tokenId: string;
+  chainId: TokenChainId;
+  /** The holder's wallet. */
+  walletAddress: string;
+  /** Distribution snapshots to read, at most 100. Duplicates are read once. */
+  snapshotIds: number[];
+}
+
+/**
+ * Where one holder stands on a distribution snapshot.
+ *
+ * - `NOT_ENTITLED` — the wallet had no balance recorded at the snapshot.
+ * - `PAID` — the holder has received their share. A push and a claim both end here; the contract
+ *   records them the same way.
+ * - `RECLAIMED` — unpaid, and the issuer has taken back the snapshot's unclaimed funds.
+ * - `UNCLAIMED` — unpaid and still active. Check `pendingAmount`: it is `0` while the holder is
+ *   ineligible to collect (for example frozen), and {@link TokenizationResource.claimYield} can
+ *   still refuse a wallet that isn't currently verified.
+ */
+export type YieldSettlement = LooseUnion<"NOT_ENTITLED" | "PAID" | "RECLAIMED" | "UNCLAIMED">;
+
+/** One entry of {@link YieldPositions.positions}: the holder's position, or why it couldn't be read. */
+export type YieldPosition = YieldPositionRead | YieldPositionError;
+
+export interface YieldPositionRead {
+  snapshotId: number;
+  settlement: YieldSettlement;
+  /** Whether the holder has been paid, by a claim or a push. */
+  claimed: boolean;
+  /** `false` once the snapshot has been reclaimed. */
+  active: boolean;
+  /** ISO 8601. When unclaimed funds become reclaimable. */
+  reclaimDeadline: string;
+  /** The snapshot's whole payout, in cNGN base units (6 decimals), as an integer string. */
+  totalFunds: string;
+  /** The holder's token balance at the snapshot, in the token's smallest unit, as an integer string. */
+  snapshotBalance: string;
+  /** The holder's share of `totalFunds`, in cNGN base units, as an integer string. */
+  entitledAmount: string;
+  /** What the holder has received, in cNGN base units, as an integer string. */
+  paidAmount: string;
+  /** What the holder can collect now, in cNGN base units, as an integer string. */
+  pendingAmount: string;
+  error?: undefined;
+}
+
+export interface YieldPositionError {
+  snapshotId: number;
+  error: {
+    /** `NOT_FOUND_SNAPSHOT`, or `SNAPSHOT_READ_FAILED` when the read can be retried. */
+    code: LooseUnion<"NOT_FOUND_SNAPSHOT" | "SNAPSHOT_READ_FAILED">;
+    message: string;
+  };
+}
+
+/** Result of {@link TokenizationResource.getYieldPositions}. */
+export interface YieldPositions {
+  tokenId: string;
+  chainId: string;
+  walletAddress: string;
+  positions: YieldPosition[];
+}
+
 export interface GetNextCouponParams {
   tokenId: string;
   chainId: TokenChainId;
